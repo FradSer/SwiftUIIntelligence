@@ -32,6 +32,7 @@ Verification uses Xcode 27.0 and its Swift toolchain on this Mac.
 - A case-insensitive search finds no old brand in active source, tests, examples, or scripts.
 - README uses `../SwiftUIIntelligence` for the local checkout path; the sibling directory resolves to the SDK root.
 - After the directory rename: a throwaway sibling host resolves `path: "../SwiftUIIntelligence"` through `swift package dump-package`, and `Example/MinimalHost` builds with a fresh scratch path.
+- The initial commit `63a4c57` imports 86 files and about 16.5 MB. The private repository `FradSer/SwiftUIIntelligence` reports PRIVATE, and `origin/main` matches local `main`.
 - Independent review finds one incorrect README package path. The path is corrected and its resolution is verified.
 - Xcode reports only the App Intents metadata warning because these targets do not depend on AppIntents.
 
@@ -47,4 +48,4 @@ The evidence directory is about 4 GB with 5022 files; four files exceed the 100 
 
 ## Active work
 
-The rename, the workspace directory rename to `SwiftUIIntelligence`, and independent review are complete. The initial commit and the private repository publication follow. No known compilation failures or unresolved review findings remain.
+The rename, the workspace directory rename to `SwiftUIIntelligence`, the independent review, and the private publication are complete. No known compilation failures or unresolved review findings remain.
