@@ -1,0 +1,11 @@
+scopes:
+    - name: ex
+      description: demo apps and sample data in Example/; does not cover core logic in Sources/
+    - name: src
+      description: core library, models, and demo components in Sources/; does not cover build scripts or tests
+    - name: ref
+      description: design assets, upstream references, and documentation in reference/; does not cover code implementations
+    - name: scripts
+      description: automation, simulation, and validation utilities in scripts/; does not cover application runtime logic
+    - name: tests
+      description: unit, contract, and interaction tests in tests/; does not cover implementation code or examples
