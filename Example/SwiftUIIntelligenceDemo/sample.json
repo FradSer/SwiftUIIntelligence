@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "root": {
+    "id": "weather-demo",
+    "type": "weatherDashboard",
+    "stage": 6,
+    "weather": {
+      "title": "Weather Dashboard",
+      "subtitle": "San Francisco, CA · Updated just now",
+      "metrics": [
+        {"id":"current-temp","value":"72°F","label":"Current Temp","detail":"Partly Cloudy"},
+        {"id":"feels-like","value":"69°F","label":"Feels Like","detail":"Comfortable"},
+        {"id":"humidity","value":"58%","label":"Humidity","detail":"Moderate"},
+        {"id":"wind-speed","value":"12 mph","label":"Wind Speed","detail":"SW Direction"},
+        {"id":"uv-index","value":"6","label":"UV Index","detail":"High"},
+        {"id":"visibility","value":"10 mi","label":"Visibility","detail":"Clear"}
+      ],
+      "days": [
+        {"id":"mon","label":"Mon","high":72,"low":58,"precipitation":0},
+        {"id":"tue","label":"Tue","high":75,"low":60,"precipitation":2},
+        {"id":"wed","label":"Wed","high":68,"low":55,"precipitation":14},
+        {"id":"thu","label":"Thu","high":63,"low":52,"precipitation":4},
+        {"id":"fri","label":"Fri","high":70,"low":58,"precipitation":1},
+        {"id":"sat","label":"Sat","high":78,"low":63,"precipitation":0},
+        {"id":"sun","label":"Sun","high":80,"low":65,"precipitation":0}
+      ],
+      "hours": [
+        {"id":"hour-6","time":"6 AM","condition":"Clear","temperature":61},
+        {"id":"hour-9","time":"9 AM","condition":"Partly Cloudy","temperature":65},
+        {"id":"hour-12","time":"12 PM","condition":"Mostly Sunny","temperature":70},
+        {"id":"hour-15","time":"3 PM","condition":"Sunny","temperature":72},
+        {"id":"hour-18","time":"6 PM","condition":"Cloudy","temperature":68},
+        {"id":"hour-21","time":"9 PM","condition":"Light Rain","temperature":63},
+        {"id":"hour-24","time":"12 AM","condition":"Rain","temperature":58}
+      ],
+      "conditions": [
+        {"id":"condition-temp","label":"Temperature","value":72},
+        {"id":"condition-humidity","label":"Humidity","value":58},
+        {"id":"condition-wind","label":"Wind","value":40},
+        {"id":"condition-uv","label":"UV Index","value":60},
+        {"id":"condition-visibility","label":"Visibility","value":80},
+        {"id":"condition-precip","label":"Precipitation","value":20}
+      ],
+      "wind": [
+        {"id":"wind-sw","label":"SW","value":38},
+        {"id":"wind-w","label":"W","value":25},
+        {"id":"wind-nw","label":"NW","value":18},
+        {"id":"wind-s","label":"S","value":12},
+        {"id":"wind-other","label":"Other","value":7}
+      ],
+      "summary":"Expect light rain Sunday evening. High pressure returns mid-week with sunny skies and temperatures reaching 80°F by next weekend."
+    }
+  },
+  "floatingActions": [
+    {"id":"replay-button","type":"button","title":"Replay","action":"replay"},
+    {"id":"pause-button","type":"button","title":"Pause","action":"pause"},
+    {"id":"complete-button","type":"button","title":"Show all","action":"complete"}
+  ]
+}

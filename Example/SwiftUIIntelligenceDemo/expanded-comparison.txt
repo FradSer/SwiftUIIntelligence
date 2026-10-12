@@ -1,0 +1,1 @@
+Create a synthetic product comparison titled Desk lamp comparison. Include a table with exactly columns Model, Price, Weight and exactly rows [Aurora, $40, 500 g], [Ember, $55, 620 g]. Add one callout with exact text: Synthetic prices; no purchase action. Do not add products, currency conversion, recommendations or new facts.

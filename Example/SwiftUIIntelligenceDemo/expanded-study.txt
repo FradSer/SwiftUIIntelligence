@@ -1,0 +1,1 @@
+Create a synthetic editable form titled Study session. Include exactly a TextEditor titled Notes default Bring notebook; Slider titled Focus default 60 minimum 0 maximum 100 step 10; DatePicker titled Start default 2026-10-12T09:00:00Z. Use declared typed state and matching controls. No host actions, calendar access or extra fields. Preserve defaults exactly.

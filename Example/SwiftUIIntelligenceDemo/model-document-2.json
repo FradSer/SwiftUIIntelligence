@@ -1,0 +1,78 @@
+{
+  "floatingActions" : [
+
+  ],
+  "root" : {
+    "children" : [
+      {
+        "id" : "title",
+        "style" : "title",
+        "text" : "Saturday Neighborhood Library Volunteer Plan",
+        "type" : "text"
+      },
+      {
+        "id" : "summary",
+        "style" : "headline",
+        "text" : "Preparation steps and timing",
+        "type" : "text"
+      },
+      {
+        "children" : [
+          {
+            "id" : "arrive-early",
+            "items" : [
+              "Arrive early"
+            ],
+            "type" : "list"
+          },
+          {
+            "id" : "review-materials",
+            "items" : [
+              "Review materials"
+            ],
+            "type" : "list"
+          },
+          {
+            "id" : "organize-space",
+            "items" : [
+              "Organize space"
+            ],
+            "type" : "list"
+          }
+        ],
+        "id" : "preparation",
+        "spacing" : 0,
+        "title" : "Preparation",
+        "type" : "section"
+      },
+      {
+        "columns" : [
+          "Task",
+          "Time"
+        ],
+        "id" : "schedule",
+        "rows" : [
+          [
+            "Welcome desk",
+            "10am"
+          ],
+          [
+            "Book sorting",
+            "3pm"
+          ]
+        ],
+        "type" : "table"
+      },
+      {
+        "id" : "arrival-note",
+        "style" : "body",
+        "text" : "Volunteers should arrive 10 minutes early.",
+        "type" : "text"
+      }
+    ],
+    "id" : "root",
+    "spacing" : 0,
+    "type" : "vstack"
+  },
+  "version" : 1
+}

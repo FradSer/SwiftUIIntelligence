@@ -1,0 +1,1 @@
+Create a synthetic analytics report titled Studio attendance. Include exactly one bar chart titled Visits with series Visitors and exact points Mon=8, Tue=12, Wed=10 in that order. Include one metric labelled Total, value 30 visits, detail Supplied aggregate, people icon. Aggregate was supplied by host, do not compute other derived numbers. No extra data, no weather.

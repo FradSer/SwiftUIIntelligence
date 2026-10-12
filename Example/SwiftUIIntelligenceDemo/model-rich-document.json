@@ -1,0 +1,115 @@
+{
+  "floatingActions" : [
+
+  ],
+  "root" : {
+    "children" : [
+      {
+        "children" : [
+          {
+            "id" : "text_1",
+            "style" : "title",
+            "text" : "Workshop readiness",
+            "type" : "text"
+          }
+        ],
+        "id" : "section_1",
+        "spacing" : 16,
+        "title" : "Workshop readiness",
+        "type" : "section"
+      },
+      {
+        "children" : [
+          {
+            "detail" : "Registered",
+            "icon" : "people",
+            "id" : "metric_1",
+            "label" : "Volunteers",
+            "type" : "metric",
+            "value" : "12 people"
+          },
+          {
+            "id" : "badge_1",
+            "text" : "Ready",
+            "tone" : "success",
+            "type" : "badge"
+          },
+          {
+            "completed" : 3,
+            "icon" : "checklist",
+            "id" : "progress_1",
+            "title" : "Safety checks",
+            "total" : 5,
+            "type" : "progress"
+          }
+        ],
+        "id" : "section_2",
+        "spacing" : 16,
+        "title" : "Status & Metrics",
+        "type" : "section"
+      },
+      {
+        "children" : [
+          {
+            "iconItems" : [
+              {
+                "icon" : "task",
+                "text" : "Prepare the tool bench"
+              },
+              {
+                "icon" : "book",
+                "text" : "Review the guide"
+              }
+            ],
+            "id" : "icon_list_1",
+            "type" : "iconList"
+          },
+          {
+            "children" : [
+              {
+                "id" : "text_2",
+                "style" : "body",
+                "text" : "Attendance",
+                "type" : "text"
+              }
+            ],
+            "id" : "hstack_1",
+            "spacing" : 12,
+            "type" : "hstack"
+          },
+          {
+            "chartStyle" : "line",
+            "id" : "chart_1",
+            "points" : [
+              {
+                "label" : "Mon",
+                "series" : "Visitors",
+                "value" : 8
+              },
+              {
+                "label" : "Tue",
+                "series" : "Visitors",
+                "value" : 12
+              },
+              {
+                "label" : "Wed",
+                "series" : "Visitors",
+                "value" : 10
+              }
+            ],
+            "title" : "Attendance",
+            "type" : "chart"
+          }
+        ],
+        "id" : "section_3",
+        "spacing" : 16,
+        "title" : "Preparation Tasks",
+        "type" : "section"
+      }
+    ],
+    "id" : "root",
+    "spacing" : 16,
+    "type" : "vstack"
+  },
+  "version" : 1
+}

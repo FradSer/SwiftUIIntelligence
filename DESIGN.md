@@ -1,0 +1,11 @@
+# Chatbot-generated native documents
+
+The primary experience is a conversation and its current document. iPhone uses native Chat/Document controls with a shared composer; wide iPad shows transcript and document side by side. Loading and errors remain visible above the content, and the last valid document survives failures. Provider labels distinguish live Apple generation, synthetic tests and recorded Mac output.
+
+All surfaces and controls use SwiftUI system-default presentation. Native controls are not restyled. Custom content cards now use regular Liquid Glass with Apple concentric corners and a documented library-specific 20pt minimum fallback; no extra decoration is imposed. Standalone interactive documents use Form/Section; other layouts retain semantic content grouping. System navigation, backgrounds and controls own their appearance. System text styles, meaningful data/status colors and adaptive layout remain.
+
+The schema owns content/layout choice, while the precompiled renderer owns readable native component implementation. Document horizontal layouts adapt on narrow screens; metric grids adapt their columns; chart labels/legends and numeric values remain readable; tables scroll horizontally. Containers use explicit accessibility containment so their IDs do not overwrite leaf button IDs. No changes to system accessibility settings.
+
+All examples inherit system/host backgrounds; the earlier blue backdrop and custom decorative theme have been removed. We deliberately do not add generated wallpaper, images, arbitrary chart expressions or new business workflows. Default provider uses the available on-device API; simulator recorded-output mode makes its origin explicit.
+
+Previous weather visual design and all source were preserved in `evidence/chat-before`. The complete OpenUI GIF module and interaction list is the weather acceptance baseline. The weather-specific reference view is preserved, and a typed adapter covers the same data with generic SDK components. Native Liquid Glass, platform type, screen adaptation and native chart defaults intentionally differ from the web GIF. New results and explicit differences are in `evidence/rich-final`; previous chat results are retained in `evidence/chat-final`.

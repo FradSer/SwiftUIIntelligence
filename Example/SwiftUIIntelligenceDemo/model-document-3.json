@@ -1,0 +1,49 @@
+{
+  "floatingActions" : [
+
+  ],
+  "root" : {
+    "children" : [
+      {
+        "children" : [
+          {
+            "id" : "text_1",
+            "style" : "title",
+            "text" : "Offline Notes App Handover",
+            "type" : "text"
+          }
+        ],
+        "id" : "section_1",
+        "spacing" : 0,
+        "title" : "Offline Notes App Handover",
+        "type" : "section"
+      },
+      {
+        "children" : [
+          {
+            "id" : "list_1",
+            "items" : [
+              "Check offline save",
+              "Check restore"
+            ],
+            "type" : "list"
+          },
+          {
+            "id" : "callout_1",
+            "text" : "Export testing is pending.",
+            "tone" : "warning",
+            "type" : "callout"
+          }
+        ],
+        "id" : "section_2",
+        "spacing" : 0,
+        "title" : "Checklist",
+        "type" : "section"
+      }
+    ],
+    "id" : "root",
+    "spacing" : 0,
+    "type" : "vstack"
+  },
+  "version" : 1
+}

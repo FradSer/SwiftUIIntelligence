@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "root": {
+    "id": "content", "type": "vstack", "spacing": 24,
+    "children": [
+      {"id": "eyebrow", "type": "text", "text": "JSON → NATIVE SWIFTUI", "style": "caption"},
+      {"id": "heading", "type": "text", "text": "A small idea.\nA native interface.", "style": "title"},
+      {"id": "description", "type": "text", "text": "This screen comes from a bundled JSON fixture. Layout, text and buttons are real SwiftUI views.", "style": "body"},
+      {"id": "details", "type": "vstack", "spacing": 12, "children": [
+        {"id": "detail-heading", "type": "text", "text": "Four components. One boundary.", "style": "headline"},
+        {"id": "detail-text", "type": "text", "text": "Only vstack, hstack, text and button are allowed. Every action must be registered by the host.", "style": "body"}
+      ]},
+      {"id": "note", "type": "text", "text": "Fixed JSON example · No model connected", "style": "caption"}
+    ]
+  },
+  "floatingActions": [
+    {"id": "greet-button", "type": "button", "title": "Say hello", "action": "greet"},
+    {"id": "count-button", "type": "button", "title": "Count +1", "action": "increment"}
+  ]
+}

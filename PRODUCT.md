@@ -1,0 +1,9 @@
+# SwiftUIIntelligence chatbot document MVP
+
+Users chat with an AI. The AI authors content and emits constrained document JSON. SwiftUIIntelligence validates complete documents and renders business-independent precompiled native SwiftUI Liquid Glass components. Follow-up messages revise documents, and new-topic requests can generate a different document. No OpenUI Lang, generated Swift, keyword business templates, or arbitrary execution.
+
+Apple Foundation Models is the preferred real provider. Model-driven create/revise intent and guided content authoring precede guided document generation. Existing chatbot responses and a host-owned HTTPS backend can be injected. The default example is chat, not weather. Synthetic interaction fixtures and recorded real Mac outputs are distinctly labelled.
+
+Scope: text, vertical/horizontal/grid layout, sections, lists, tables, callouts, metrics, icon lists, badges, numeric progress, line/area/bar/donut/radar charts and allowlisted host buttons; chat composer, context, loading, errors, invalid responses, retry, document replacement and JSON inspection. Native material implementation remains library-owned. Models may make semantic mistakes; strict JSON checks do not establish factual correctness.
+
+No model keys in client/source, private content in test runs, cloud resource creation, changes to Apple Intelligence/system/security settings, or public release. The user authorizes one private remote repository. No remote package URL or version tag is supplied. The complete original weather module is the GIF reference use case. Its six interactions and all visible modules remain preserved. A typed example-owned adapter expresses all reference data through generic SDK nodes; it is deterministic replay, separately labeled from actual model generation.

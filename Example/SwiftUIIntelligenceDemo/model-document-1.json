@@ -1,0 +1,48 @@
+{
+  "floatingActions" : [
+
+  ],
+  "root" : {
+    "children" : [
+      {
+        "children" : [
+          {
+            "id" : "prep_tasks",
+            "items" : [
+              "Arrive early",
+              "Review materials",
+              "Organize space"
+            ],
+            "type" : "list"
+          },
+          {
+            "columns" : [
+              "Task",
+              "Time"
+            ],
+            "id" : "prep_schedule",
+            "rows" : [
+              [
+                "Welcome desk",
+                "10am"
+              ],
+              [
+                "Book sorting",
+                "2pm"
+              ]
+            ],
+            "type" : "table"
+          }
+        ],
+        "id" : "prep",
+        "spacing" : 0,
+        "title" : "Preparation",
+        "type" : "section"
+      }
+    ],
+    "id" : "root",
+    "spacing" : 0,
+    "type" : "vstack"
+  },
+  "version" : 1
+}

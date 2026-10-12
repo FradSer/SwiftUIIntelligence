@@ -1,0 +1,1 @@
+Create a timeline titled Workshop schedule with exactly three events, preserving each field exactly. Event time 09:00 title Setup detail Prepare tables. Event time 10:00 title Session detail Practice together. Event time 12:00 title Review detail Collect feedback. These are synthetic clock labels, no calendar access or dates. Do not invent events or add prose summaries.
