@@ -1,8 +1,10 @@
 # SwiftUIIntelligence
 
-An open-source framework for intelligent interfaces, built on SwiftUI.
+**English** | [简体中文](README.zh-CN.md)
 
-The package, modules, examples, and public branded types use `SwiftUIIntelligence`. Existing consumers must update their imports and type names. Historical evidence retains the names used during those runs. The workspace directory is `SwiftUIIntelligence`. For the latest build and test results, see [current project state](CONTEXT.md).
+A SwiftUI package for intelligent interfaces. The repository is private, and no license file or public release is supplied.
+
+The package, modules, examples, and public branded types use `SwiftUIIntelligence`. Existing consumers must update their imports and type names. Historical evidence retains the names used during those runs. The workspace directory is `SwiftUIIntelligence`. The private repository is [FradSer/SwiftUIIntelligence](https://github.com/FradSer/SwiftUIIntelligence). For the latest build and test results, see [current project state](CONTEXT.md).
 
 业务无关的 Swift Package：chatbot 消息与上下文 → AI 内容起草 → 受 Schema 约束的文档 JSON → 严格校验 → 预编译原生 SwiftUI Liquid Glass 文档。没有 OpenUI Lang、生成 Swift、动态代码执行或天气关键词路由。支持 iOS/iPadOS、macOS 26+，Swift 6.2+。
 
@@ -13,7 +15,7 @@ The package, modules, examples, and public branded types use `SwiftUIIntelligenc
 - `SwiftUIIntelligenceWeatherDemo`：完整 GIF 天气参考回放、原仪表盘和类型化通用节点转换；确定性回放与 AI 生成明确区分。
 - `SwiftUIIntelligenceModelProbe`：同机 macOS 的真实模型验收工具，仅使用源码中公开的合成聊天内容。
 
-支持节点：`vstack`、`hstack`、`grid`、`text`、`button`、`section`、`list`、`table`、`callout`、`metric`、`iconList`、`badge`、`progress`、`chart`。这不是任意 SwiftUI 代码解释器。布局、类型和内容由 AI 选择；组件实现和玻璃材质由库预编译提供。图表支持多序列折线、面积、柱状、环形和雷达；不接受表达式、任意颜色、图片 URL、生成代码或自定义绘图执行。
+支持节点以 `ComponentCatalog.components`（`UINode.Kind.allCases`）为准：`vstack`、`hstack`、`grid`、`text`、`button`、`section`、`list`、`table`、`callout`、`metric`、`iconList`、`badge`、`progress`、`chart`、`form`、`control`、`navigationLink`、`timeline`。这不是任意 SwiftUI 代码解释器。布局、类型和内容由 AI 选择；组件实现和玻璃材质由库预编译提供。图表支持多序列折线、面积、柱状、环形和雷达；不接受表达式、任意颜色、图片 URL、生成代码或自定义绘图执行。
 
 Apple 适配器先由模型规划通用内容分组，再用独立受约束会话生成各组与标题、状态 JSON，最后将未经改写的模型子树合并到通用容器。它不是一次单一模型响应；生成失败会返回错误，保留上一份有效文档。显式请求的图表样式与分组覆盖经过检查，独立规划重试避免累积超出模型上下文。
 
@@ -35,6 +37,9 @@ Apple 适配器先由模型规划通用内容分组，再用独立受约束会�
 - `--model-service`：同一通用路径展示真实模型生成的服务指标、任务、图表和进度，验证组件不依赖天气业务。
 - `--show-complete`：录制展示模式直接显示完整文档。
 - `--sdk-demo`：原通用节点与宿主动作样例。
+- `--expanded-case <name>`：回放本机模型生成的可编辑表单场景，标注 `Recorded Apple model output · generated on Mac`。可用 `settings`（默认）、`study`、`schedule`、`analysis`、`comparison`、`navigation`。
+- `--fixture bad-json|unknown-component|unknown-action`：内嵌显示合成错误文档，用于失败界面。
+- `--test-reduce-transparency`：仅供 UI 测试，用 SPI 环境值模拟「降低透明度」。
 
 不要把模型密钥放入客户端或源码。Apple provider 本机生成；可用状态不足时报告原因，不自动开关 Apple Intelligence、下载模型或改变系统配置。
 
@@ -83,22 +88,26 @@ let chat = DocumentChatSession(provider: provider, registeredActions: registry.n
 
 `DocumentGenerationContract.schemaJSON(registeredActions:)` 提供 Draft 2020-12 Schema；`instructions` 提供模型约束；Foundation Models 适配从同一 Schema 转换官方 `DynamicGenerationSchema`/`GenerationSchema`。表格使用 1–6 列固定宽度分支，避免不同长度的行。内容模型同时选择所需组件，Apple 文档阶段只使用选中的组件及基础布局，以降低上下文负担；选择由模型完成，不按业务关键词路由。内容规划预算 2600 tokens、旧丰富组件分组 1100 tokens、新通用直接生成 2400 tokens；超限或内容不完整仍报告失败，不伪造输出。Apple API 不支持的字符串/全局约束由 SDK 严格验证，而非假称模型完全保证。
 
-最多 64 KiB JSON、128 节点、12 层、每布局 32 子节点；文本 4000 字符；列表 1–32 非空项、单项 1000 字符；表格 1–6 列/1–32 行；最多三个浮动按钮。会话最多 24 条消息、48 KiB 内容；超限可开启新会话，不悄悄截断上下文。Apple 模型自身上下文限制也可能更早拒绝，由 provider 错误界面显示。
+最多 64 KiB JSON、128 节点、12 层、每布局 32 子节点；文本 4000 字符；列表 1–32 非空项、单项 1000 字符；表格 1–6 列/1–32 行；最多 32 个 state 字段；最多三个浮动按钮。会话最多 24 条消息、48 KiB 内容；超限可开启新会话，不悄悄截断上下文。Apple 模型自身上下文限制也可能更早拒绝，由 provider 错误界面显示。
 
 `DocumentChatSession` 有 idle/generating/ready/failed 状态，区分 input/provider/invalidDocument 失败。只有完整验证成功后原子更新文档和 revision；失败保留之前文档；重试不重复追加用户消息，非法响应不进入历史。reset 使用请求身份丢弃迟到结果。没有后台任务、数据库或持久化私人聊天。
 
 ## 验证
 
 ```sh
-./scripts/test-package.sh
-./scripts/validate-chat.sh # Package + original phone/iPad chat/SDK UI; new evidence directory
+./scripts/test-package.sh # All package tests. No arguments.
+./scripts/validate-chat.sh # Package tests + phone/iPad chat and SDK UI tests. New evidence directory.
+./scripts/validate.sh # Package tests + the full phone/iPad UI suite. Writes evidence/final.
+./scripts/run-simulator.sh # Build, install and launch the demo on a booted simulator.
 swift run --scratch-path /tmp/swiftuiintelligence-model-probe --disable-sandbox \
   SwiftUIIntelligenceModelProbe evidence/chat-final/real-model
 ```
 
-模型工具实际调用 Mac 本机 Apple 模型并保存请求、内容草稿、原始响应、规范 JSON和状态；测试程序对合成班次、跟进修改及跨领域交接执行明确语义断言。这些断言属于验收工具，不是 SDK 的业务规则。
+本轮验证使用 Xcode 27.0（27A266a）。
 
-本轮扩展验证见 `evidence/expanded-final/VALIDATION.md`；上一轮真实天气/服务最终证据见 `evidence/visual-model-final/VALIDATION.md`。此前丰富组件和聊天链路结果分别保留在 `evidence/rich-final`、`evidence/chat-final`；先前天气玻璃验证保留在 `evidence/glass-final`。历史验证证据与 `evidence/chat-before` 均保留。OpenUI GIF 只用于旧天气示例，来源/MIT 说明见 `THIRD_PARTY_NOTICES.md`。
+模型工具实际调用 Mac 本机 Apple 模型并保存请求、内容草稿、原始响应、规范 JSON和状态；测试程序对合成班次、跟进修改及跨领域交接执行明确语义断言。这些断言属于验收工具，不是 SDK 的业务规则。`validate-chat.sh` 与 `validate.sh` 可选传入 phone/iPad 模拟器 ID，默认值是本机现有设备；`test-package.sh` 无参数。`run-simulator.sh` 可选传入模拟器 ID，复用已启动的设备并且不擦除设备数据。`validate-chat.sh` 与 `validate.sh` 分别用 `SWIFTUIINTELLIGENCE_CHAT_EVIDENCE_DIR` 和 `SWIFTUIINTELLIGENCE_EVIDENCE_DIR` 指定证据目录。
+
+`evidence/` 目录约 4 GB，只保留在本机，不进入私有仓库，因此下列证据路径只在本地工作区存在。本轮扩展验证见 `evidence/expanded-final/VALIDATION.md`；上一轮真实天气/服务最终证据见 `evidence/visual-model-final/VALIDATION.md`。此前丰富组件和聊天链路结果分别保留在 `evidence/rich-final`、`evidence/chat-final`；先前天气玻璃验证保留在 `evidence/glass-final`。历史验证证据与 `evidence/chat-before` 均保留。OpenUI GIF 只用于旧天气示例，来源/MIT 说明见 `THIRD_PARTY_NOTICES.md`。
 
 ## 图标与丰富组件契约
 
@@ -153,7 +162,7 @@ Keep one `DocumentState` instance per document/session. Native controls edit it 
 
 `session.cancel()` cancels the owned task and invalidates late completions; `reset()` also clears history. Failures keep the previous valid document and support `retry()`. The default 300-second deadline can be changed or disabled with `timeout:nil`; it invalidates late results but cannot forcibly terminate a provider ignoring cancellation. `StreamingDocumentGenerationProvider` supplies cumulative snapshots; the session exposes snapshot counts/sizes and commits only the final validated document. Rich legacy grouped generation reports traces but does not yet stream public progress. The six-step weather playback is explicit saved-JSON replay, not live model streaming.
 
-See [capability coverage](CAPABILITIES.md) and [this round's validation](evidence/expanded-final/VALIDATION.md). The model uses a smaller capability-specific grammar to fit its 4096-token context. With one field per selected control type it generates a native typed state object; only its container shape is adapted into the public state array, preserving each declaration and root unchanged. Multiple fields of one control type use the broader state-array grammar and have not been model-tested. Native generation currently bounds a request to one first-level navigation route. It may still reject facts/bindings after bounded retries; failure records are retained. This package is a bounded OpenUI-style text-to-native-UI SDK, not support for all SwiftUI APIs.
+See [capability coverage](CAPABILITIES.md) and the local `evidence/expanded-final/VALIDATION.md`. The model uses a smaller capability-specific grammar to fit its 4096-token context. With one field per selected control type it generates a native typed state object; only its container shape is adapted into the public state array, preserving each declaration and root unchanged. Multiple fields of one control type use the broader state-array grammar and have not been model-tested. Native generation currently bounds a request to one first-level navigation route. It may still reject facts/bindings after bounded retries; failure records are retained. This package is a bounded OpenUI-style text-to-native-UI SDK, not support for all SwiftUI APIs.
 
 
 ## Native controls and rounded Liquid Glass cards
