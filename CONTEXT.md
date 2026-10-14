@@ -15,6 +15,8 @@ Historical evidence and reference artifacts remain unchanged. The workspace dire
 - Existing consumers must update their imports and renamed public symbols. No compatibility module is supplied.
 - Document JSON fields and component kinds remain unchanged.
 - One private remote repository holds the source. The evidence directory stays local and untracked.
+- `README.md` holds English prose. `README.zh-CN.md` mirrors it in Chinese.
+- Both READMEs open with the `A FRAD PRODUCT` badge, the follower badge, and the Swift and platform badges.
 
 ## Verification
 
@@ -35,6 +37,8 @@ Verification uses Xcode 27.0 and its Swift toolchain on this Mac.
 - The initial commit `63a4c57` imports 86 files and about 16.5 MB. The private repository `FradSer/SwiftUIIntelligence` reports PRIVATE, and `origin/main` matches local `main`.
 - Independent review finds one incorrect README package path. The path is corrected and its resolution is verified.
 - Xcode reports only the App Intents metadata warning because these targets do not depend on AppIntents.
+- Both READMEs pass a local-link check, a table-shape check, and a code-fence parity check.
+- The legal claim in each README derives from the tracked project files and the earlier rename record.
 
 Build logs are in `/tmp/swiftuiintelligence-*.log`.
 The UI test result is under `/tmp/swiftuiintelligence-rename-ios/Logs/Test/`.
@@ -48,4 +52,6 @@ The evidence directory is about 4 GB with 5022 files; four files exceed the 100 
 
 ## Active work
 
-The rename, the workspace directory rename to `SwiftUIIntelligence`, the independent review, and the private publication are complete. No known compilation failures or unresolved review findings remain.
+The rename, the workspace directory rename to `SwiftUIIntelligence`, the independent review, and the private publication are complete.
+The README restructure is complete: English `README.md`, Chinese `README.zh-CN.md`, and the badge block. No known
+compilation failures or unresolved review findings remain.
