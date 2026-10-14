@@ -266,12 +266,12 @@ private struct DemoBackdrop: View {
     if isErrorFixture {
       SwiftUIIntelligenceView(data: snapshot, actions: actions, embedded: true)
     } else if modelDocument {
-      SwiftUIIntelligenceView(data: snapshot, actions: actions, scrollTargetID: stage == .finale ? lastModelGroupID : nil).clipped()
+      SwiftUIIntelligenceView(data: snapshot, actions: actions, scrollTargetID: stage == .finale ? lastModelGroupID : nil)
     } else if ProcessInfo.processInfo.arguments.contains("--generic-weather"),
       let weather = try? WeatherDocument.decode(snapshot, registeredActions: actions.names),
       let document = try? GenericWeatherReference.document(from: weather, registeredActions: actions.names) {
       SwiftUIIntelligenceView(document: document, actions: actions, scrollTargetID: stage == .finale ? "weather-details" : nil)
-        .clipped()
+
     } else {
       WeatherDemoView(data: snapshot, actions: actions)
     }
@@ -376,6 +376,10 @@ private struct ChatScreen: View {
   @State private var input = ""
   @State private var panel = "Chat"
   @State private var sourceShown = false
+  @State private var jsonShown = false
+  @State private var originalShown = false
+  @State private var comparison = "Chat"
+  @State private var originalSources: [String] = []
   @State private var hostResult = ""
   @FocusState private var composerFocused: Bool
 
@@ -383,7 +387,10 @@ private struct ChatScreen: View {
     let args = ProcessInfo.processInfo.arguments
     let provider: any DocumentGenerationProvider
     let label: String
-    if args.contains("--chat-rich-output") {
+    if let index = args.firstIndex(of: "--chat-reference"), args.indices.contains(index + 1) {
+      provider = ReferenceReadingProvider(scenario: args[index + 1])
+      label = "Synthetic reference fixture · not AI generation"
+    } else if args.contains("--chat-rich-output") {
       provider = RecordedRichProvider()
       label = "Recorded Apple model output · generated on Mac · rich components"
     } else if args.contains("--chat-real-outputs") {
@@ -404,18 +411,23 @@ private struct ChatScreen: View {
   var body: some View {
     GeometryReader { geometry in
       let wide = geometry.size.width >= 900
-      VStack(spacing: 12) {
+      VStack(spacing: 8) {
         header
         if !wide {
           Group {
-            HStack(spacing: 10) {
+            HStack(spacing: 0) {
               ForEach(["Chat", "Document"], id: \.self) { value in
                 Button {
                   panel = value
                 } label: {
-                  Text(value).frame(maxWidth: .infinity, minHeight: 44)
+                  Text(value).font(.subheadline.weight(panel == value ? .semibold : .regular))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background {
+                      if panel == value { Capsule().fill(.background.secondary) }
+                    }
                 }
-                
+                .buttonStyle(.plain)
+                .accessibilityValue(panel == value ? "Selected" : "")
                 .accessibilityIdentifier(value == "Chat" ? "chat-panel" : "document-panel")
               }
             }
@@ -439,9 +451,20 @@ private struct ChatScreen: View {
         Group {
           HStack(alignment: .top, spacing: 16) {
             if wide || panel == "Chat" {
-              conversation.frame(maxWidth: wide ? geometry.size.width * 0.34 : .infinity)
+              VStack(spacing: 12) {
+                if wide && !originalSources.isEmpty {
+                  HStack {
+                    Button("Chat") { comparison = "Chat" }.accessibilityIdentifier("comparison-chat")
+                    Spacer()
+                    Button("Original text") { comparison = "Original" }.accessibilityIdentifier("original-source")
+                  }.padding(.horizontal, 16)
+                }
+                if wide && comparison == "Original" {
+                  ScrollView { originalSourceCard.padding(20) }
+                } else { conversation }
+              }.frame(maxWidth: wide ? geometry.size.width * 0.34 : .infinity)
             }
-            if wide || panel == "Document" { documentPanel }
+            if wide || panel == "Document" { documentPanel(wide: wide) }
           }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
         composer.padding(.top, 4).padding(.bottom, 8)
@@ -450,16 +473,33 @@ private struct ChatScreen: View {
       
     }
     .onChange(of: session.revision) { _, _ in hostResult = "" }
+    .sheet(isPresented: $originalShown) {
+      NavigationStack {
+        ScrollView { GlassEffectContainer { originalSourceCard.padding(20) } }
+          .navigationTitle("Original text").navigationBarTitleDisplayMode(.inline)
+          .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { originalShown = false } } }
+      }
+    }
     .sheet(isPresented: $sourceShown) {
       NavigationStack {
-        ScrollView([.vertical, .horizontal]) {
-          Text(String(decoding: session.documentJSON ?? Data(), as: UTF8.self))
-            .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-            .padding(20).padding(16)
-            .accessibilityIdentifier("chat-json-source")
+        ScrollView {
+          VStack(alignment: .leading, spacing: 20) {
+            Text("Model source").font(.headline)
+            Text(modeLabel).font(.callout).textSelection(.enabled)
+              .accessibilityIdentifier("chat-provider-label")
+            Text(session.revision == 0 ? "DOCUMENT" : "DOCUMENT · \(session.revision)")
+              .font(.caption.bold()).accessibilityIdentifier("chat-revision")
+            Button("View JSON") { jsonShown = true }
+              .disabled(session.document == nil).accessibilityIdentifier("chat-show-json")
+            if jsonShown {
+              Text(String(decoding: session.documentJSON ?? Data(), as: UTF8.self))
+                .font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("chat-json-source")
+            }
+          }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
         }
-        
-        .navigationTitle("Document JSON").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("Details").navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .confirmationAction) { Button("Done") { sourceShown = false } }
           ToolbarItem(placement: .topBarLeading) {
@@ -477,17 +517,25 @@ private struct ChatScreen: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack {
         VStack(alignment: .leading, spacing: 4) {
-          Text("SwiftUIIntelligence").font(.title2)
-          Text(modeLabel).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier(
-            "chat-provider-label")
+          Text("SwiftUIIntelligence").font(.headline)
+
         }
         Spacer(minLength: 8)
-        Button("New chat") {
+        Button { jsonShown = false; sourceShown = true } label: {
+          Image(systemName: "info.circle").frame(width: 44, height: 44)
+        }
+          .accessibilityLabel("Details").accessibilityIdentifier("chat-details")
+        Button {
           session.reset()
+          originalSources = []
+          comparison = "Chat"
+          originalShown = false
           hostResult = ""
           panel = "Chat"
+        } label: {
+          Image(systemName: "square.and.pencil").frame(width: 44, height: 44)
         }
-        .accessibilityIdentifier("chat-reset")
+        .accessibilityLabel("New chat").accessibilityIdentifier("chat-reset")
       }
       if modeLabel.contains("Unavailable") {
         Button("Try synthetic demo") {
@@ -497,7 +545,7 @@ private struct ChatScreen: View {
         }.accessibilityIdentifier("chat-use-synthetic")
       }
     }
-    .padding(14)
+    .padding(.horizontal, 4)
   }
 
   private var conversation: some View {
@@ -533,18 +581,39 @@ private struct ChatScreen: View {
     }
   }
 
-  private var documentPanel: some View {
+  private var originalSourceCard: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Label("Original text", systemImage: "doc.text").font(.headline)
+      ForEach(Array(originalSources.enumerated()), id: \.offset) { index, source in
+        VStack(alignment: .leading, spacing: 8) {
+          if originalSources.count > 1 {
+            Text("Message \(index + 1)").font(.caption).foregroundStyle(.secondary)
+          }
+          Text(source).font(.body).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("source-text-\(index)")
+        }
+      }
+    }
+    .modifier(SwiftUIIntelligenceSurface(inset: 16))
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("original-source-card")
+  }
+
+  private func documentPanel(wide: Bool) -> some View {
     VStack(spacing: 12) {
-      HStack {
-        Text(session.revision == 0 ? "DOCUMENT" : "DOCUMENT · \(session.revision)").font(
-          .caption.bold()
-        )
-        .accessibilityIdentifier("chat-revision")
-        Spacer()
-        Button("JSON") { sourceShown = true }.disabled(session.document == nil)
-          .accessibilityIdentifier("chat-show-json")
-      }.padding(12)
+      if !wide && !originalSources.isEmpty {
+        HStack {
+          Spacer()
+          Button { originalShown = true } label: {
+            Label("Original text", systemImage: "doc.text").font(.subheadline).frame(minHeight: 44)
+          }.accessibilityIdentifier("original-source")
+        }.padding(.horizontal, 20)
+      }
       ScrollView {
+        GlassEffectContainer {
+        VStack(alignment: .leading, spacing: 20) {
         if let document = session.document {
           SwiftUIIntelligenceView(
             document: document,
@@ -561,7 +630,11 @@ private struct ChatScreen: View {
             "Your document appears here", systemImage: "doc.text",
             description: Text("Only validated, complete JSON is rendered.")
           )
-          
+
+        }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 24)
         }
       }.accessibilityIdentifier("chat-document-scroll")
     }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -600,6 +673,7 @@ private struct ChatScreen: View {
         .accessibilityIdentifier("chat-input")
       Button {
         let message = input
+        originalSources.append(message)
         input = ""
         composerFocused = false
         Task {
@@ -703,4 +777,16 @@ private struct AccessibilityTestOverride: ViewModifier {
       content
     }
   }
+}
+
+/// Synthetic reference scenes verify reading structure without claiming model inference.
+private struct ReferenceReadingProvider: DocumentGenerationProvider {
+  let scenario: String
+  func generate(_ request: DocumentGenerationRequest) async throws -> Data {
+    let json = scenario == "events" ? Self.events : Self.narrative
+    return Data(json.utf8)
+  }
+
+  private static let narrative = #"{"version":1,"root":{"id":"reference-root","type":"vstack","spacing":20,"children":[{"id":"reference-overview","type":"section","title":"Cyanotype","spacing":16,"children":[{"id":"reference-answer","type":"text","style":"body","text":"The cyanotype process was invented in 1842 by English astronomer and chemist Sir John Herschel. He developed the method to copy his scientific notes, using light-sensitive iron salts to create a distinctive Prussian blue print."}]},{"id":"reference-process","type":"section","title":"How the print forms","spacing":12,"children":[{"id":"reference-steps","type":"iconList","iconItems":[{"text":"Light-sensitive iron salts provide the coating.","icon":"info"},{"text":"Light exposes the coated surface.","icon":"sun"},{"text":"The process produces a Prussian blue print.","icon":"checklist"}]}]}]},"floatingActions":[]}"#
+  private static let events = #"{"version":1,"root":{"id":"reference-events-root","type":"vstack","spacing":20,"children":[{"id":"reference-intro","type":"text","style":"body","text":"Here are the upcoming birthday celebrations in this supplied example. These are synthetic events, not events from your calendar."},{"id":"reference-events","type":"timeline","title":"Birthday celebrations","events":[{"time":"Wednesday, April 1","title":"Maiko’s birthday","detail":"All-day","cardColor":"orange"},{"time":"Friday, April 17","title":"Birthday celebration for Nick, Juan, and Vicki","detail":"Apr 17, 3:00–4:00 PM","cardColor":"blue"},{"time":"Tuesday, April 28","title":"Hunter’s birthday","detail":"All-day","cardColor":"orange"}]}]},"floatingActions":[]}"#
 }

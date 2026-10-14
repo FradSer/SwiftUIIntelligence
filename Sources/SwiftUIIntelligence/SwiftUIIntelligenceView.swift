@@ -79,7 +79,7 @@ import SwiftUI
                       .frame(maxWidth: .infinity, alignment: .leading)
                       .padding()
                   }
-                }.clipped().accessibilityIdentifier("generic-document-scroll")
+                }.accessibilityIdentifier("generic-document-scroll")
               }
             }
               .task(id: scrollTargetID) {
@@ -156,6 +156,12 @@ import SwiftUI
   }
 }
 
+enum DocumentSurfacePolicy {
+  static func childSurface(parentShowsSurface: Bool) -> Bool {
+    parentShowsSurface
+  }
+}
+
 private struct NodeView: View {
   @Environment(DocumentState.self) private var state
   @Environment(\.documentDestinations) private var destinations
@@ -163,6 +169,8 @@ private struct NodeView: View {
   let run: (String) -> Void
   var showsSurface = true
   var sectionTitle: String? = nil
+  var inheritedCardColor: CardColor = .neutral
+  private var effectiveCardColor: CardColor { showsSurface ? node.cardColor ?? inheritedCardColor : inheritedCardColor }
 
   // Type erasure is confined to recursion over a validated heterogeneous tree.
   @ViewBuilder var body: some View {
@@ -174,7 +182,7 @@ private struct NodeView: View {
       } header: { SymbolText(text: node.title, icon: node.icon) }
     } else if node.type == .control {
       Group {
-        if showsSurface { content.modifier(SwiftUIIntelligenceSurface()) } else { content }
+        if showsSurface { content.modifier(SwiftUIIntelligenceSurface(cardColor: effectiveCardColor)) } else { content }
       }.id(node.id)
     } else if node.type == .vstack || node.type == .hstack || node.type == .grid || node.type == .section || node.type == .form {
       surface.id(node.id).accessibilityElement(children: .contain).accessibilityIdentifier(node.id)
@@ -185,9 +193,9 @@ private struct NodeView: View {
 
   private var surface: some View {
     Group {
-      if showsSurface && node.type != .button && !layoutHasSections && node.type != .navigationLink {
+      if showsSurface && node.type != .button && node.type != .vstack && node.type != .hstack && node.type != .grid && node.type != .timeline && (!layoutHasSections || node.type == .section) && node.type != .navigationLink {
         content.frame(maxWidth: .infinity, maxHeight: node.type == .metric ? .infinity : nil, alignment: .topLeading)
-          .modifier(SwiftUIIntelligenceSurface(inset: node.type == .metric ? 12 : 18))
+          .modifier(SwiftUIIntelligenceSurface(inset: node.type == .metric ? 12 : 18, cardColor: effectiveCardColor))
       } else {
         content
       }
@@ -199,22 +207,22 @@ private struct NodeView: View {
     case .vstack:
       AnyView(
         VStack(alignment: .leading, spacing: max(8, node.spacing)) {
-          ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: layoutHasSections, sectionTitle: sectionTitle) }
+          ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: DocumentSurfacePolicy.childSurface(parentShowsSurface: showsSurface), sectionTitle: sectionTitle, inheritedCardColor: effectiveCardColor) }
         })
     case .hstack:
       AnyView(
         ViewThatFits(in: .horizontal) {
           HStack(spacing: node.spacing) {
-            ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: layoutHasSections, sectionTitle: sectionTitle) }
+            ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: DocumentSurfacePolicy.childSurface(parentShowsSurface: showsSurface), sectionTitle: sectionTitle, inheritedCardColor: effectiveCardColor) }
           }
           VStack(alignment: .leading, spacing: max(8, node.spacing)) {
-            ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: layoutHasSections, sectionTitle: sectionTitle) }
+            ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: DocumentSurfacePolicy.childSurface(parentShowsSurface: showsSurface), sectionTitle: sectionTitle, inheritedCardColor: effectiveCardColor) }
           }
         })
     case .grid:
       AnyView(
         AdaptiveNodeGrid(maxColumns: node.columnCount, spacing: node.spacing, minimumCellWidth: node.children.contains(where: { $0.type == .chart }) ? 240 : 90) {
-          ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: true, sectionTitle: sectionTitle) }
+          ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: showsSurface, sectionTitle: sectionTitle, inheritedCardColor: effectiveCardColor) }
         })
     case .text:
       AnyView(
@@ -228,8 +236,10 @@ private struct NodeView: View {
     case .section:
       AnyView(
         VStack(alignment: .leading, spacing: max(8, node.spacing)) {
-          SymbolText(text: node.title, icon: node.icon).font(.headline).foregroundStyle(.primary)
-          ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: layoutHasSections, sectionTitle: node.title) }
+          if !node.children.contains(where: { $0.type == .text && $0.text == node.title }) {
+            SymbolText(text: node.title, icon: node.icon).font(.headline).foregroundStyle(.primary)
+          }
+          ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: false, sectionTitle: node.title, inheritedCardColor: effectiveCardColor) }
         })
     case .list:
       AnyView(
@@ -293,22 +303,24 @@ private struct NodeView: View {
         if let target = destinations[node.destination] {
           ScrollView {
             GlassEffectContainer { NodeView(node: target, run: run).padding(24) }
-          }.clipped()
+          }
             
             .environment(state).environment(\.documentDestinations, destinations)
             .navigationTitle(target.title)
         }
       } label: { Label(node.title, systemImage: "chevron.right") })
     case .timeline:
-      AnyView(VStack(alignment: .leading, spacing: 16) {
+      AnyView(VStack(alignment: .leading, spacing: 20) {
         Text(node.title).font(.headline)
         ForEach(Array(node.events.enumerated()), id: \.offset) { _, event in
-          HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "circle.fill").font(.caption).foregroundStyle(.tint).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 4) {
-              Text(event.time).font(.caption).foregroundStyle(.secondary)
-              Text(event.title).font(.headline)
-              if !event.detail.isEmpty { Text(event.detail).font(.body) }
+          VStack(alignment: .leading, spacing: 8) {
+            Text(event.time).font(.subheadline.weight(.semibold))
+            Group {
+              if showsSurface {
+                timelineRow(event).modifier(SwiftUIIntelligenceSurface(inset: 16, cardColor: event.cardColor ?? effectiveCardColor))
+              } else {
+                timelineRow(event)
+              }
             }
           }
         }
@@ -321,13 +333,26 @@ private struct NodeView: View {
     }
   }
 
+  private func timelineRow(_ event: TimelineEvent) -> some View {
+    HStack(alignment: .top, spacing: 12) {
+      Image(systemName: "calendar").foregroundStyle((event.cardColor ?? effectiveCardColor).swiftUIColor).accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 6) {
+        Text(event.title).font(.headline).fixedSize(horizontal: false, vertical: true)
+        if !event.detail.isEmpty {
+          Text(event.detail).font(.subheadline).foregroundStyle(.primary.opacity(0.85))
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
   private var layoutHasSections: Bool {
-    (node.type == .vstack || node.type == .hstack || node.type == .grid || node.type == .section) && node.children.contains { [.section, .metric, .chart, .progress, .iconList, .grid].contains($0.type) || $0.children.contains { [.metric, .chart, .section].contains($0.type) } }
+    (node.type == .vstack || node.type == .hstack || node.type == .grid || node.type == .section) && node.children.contains { [.section, .metric, .chart, .progress, .iconList, .grid, .timeline].contains($0.type) || $0.children.contains { [.metric, .chart, .section].contains($0.type) } }
   }
 
   private var font: Font {
     switch node.style {
-    case .title: .largeTitle
+    case .title: .title2
     case .headline: .headline
     case .body: .body
     case .caption: .caption

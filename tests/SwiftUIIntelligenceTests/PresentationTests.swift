@@ -90,3 +90,37 @@ private func decodeNode(_ node: String) throws -> UIDocument {
     }
   }
 }
+
+@Test func groupedSectionSuppressesNestedLayoutSurfaces() {
+  #expect(!DocumentSurfacePolicy.childSurface(parentShowsSurface: false))
+}
+
+@Test func documentContractPrefersNarrativeWithoutForcingDashboards() {
+  let instructions = DocumentGenerationContract.instructions(registeredActions: [])
+  #expect(instructions.contains("Lead with an answer paragraph"))
+  #expect(instructions.contains("Only use a dashboard when the user requests one"))
+}
+
+@Test func ungroupedLayoutsRetainChildGlassSurfaces() {
+  #expect(DocumentSurfacePolicy.childSurface(parentShowsSurface: true))
+}
+
+@Test func cardPaletteRoundTripsAndPreservesOldJSON() throws {
+  let colored = try decodeNode(#"{"id":"s","type":"section","title":"Events","spacing":12,"cardColor":"blue","children":[{"id":"t","type":"timeline","title":"Dates","events":[{"time":"April 1","title":"Birthday","detail":"All-day","cardColor":"orange"}]}]}"#)
+  let json = String(decoding: try DocumentGenerationContract.canonicalJSON(colored), as: UTF8.self)
+  #expect(json.contains("\"cardColor\" : \"blue\""))
+  #expect(json.contains("\"cardColor\" : \"orange\""))
+  let old = try decodeNode(#"{"id":"t","type":"text","text":"Original","style":"body"}"#)
+  #expect(!String(decoding: try DocumentGenerationContract.canonicalJSON(old), as: UTF8.self).contains("cardColor"))
+}
+
+@Test(arguments: ["red", "#ff8800", "https://example.com"]) func unknownCardColorsAreRejected(color: String) {
+  #expect(throws: (any Error).self) { try decodeNode("{\"id\":\"t\",\"type\":\"text\",\"text\":\"Test\",\"style\":\"body\",\"cardColor\":\"\(color)\"}") }
+}
+
+@Test(arguments: [
+  #"{"id":"t","type":"text","text":"Test","style":"body","cardColor":null}"#,
+  #"{"id":"t","type":"timeline","title":"Dates","events":[{"time":"April 1","title":"Birthday","detail":"All-day","cardColor":null}]}"#,
+]) func explicitNullCardColorsAreRejected(node: String) {
+  #expect(throws: (any Error).self) { try decodeNode(node) }
+}

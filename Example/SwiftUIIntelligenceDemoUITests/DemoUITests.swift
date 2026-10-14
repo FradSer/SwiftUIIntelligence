@@ -2,6 +2,137 @@ import UIKit
 import XCTest
 
 @MainActor final class DemoUITests: XCTestCase {
+  func testReferenceNarrativeAndDatedCards() {
+    prepareOrientation()
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    for appearance in ["light", "dark", "reduced"] {
+      for scenario in ["narrative", "events"] {
+        app.launchArguments = ["--chat-reference", scenario, "--appearance", appearance == "reduced" ? "light" : appearance]
+        if appearance == "reduced" { app.launchArguments.append("--test-reduce-transparency") }
+        app.launch()
+        send("Reference source for \(scenario).", app: app)
+        waitForRevision(1, app: app)
+        if scenario == "narrative" {
+          let answer = app.staticTexts["reference-answer"]
+          XCTAssertTrue(answer.waitForExistence(timeout: 5))
+          XCTAssertTrue(answer.isHittable)
+          XCTAssertTrue(answer.label.contains("1842"))
+          XCTAssertTrue(answer.label.contains("Sir John Herschel"))
+          XCTAssertTrue(answer.label.contains("Prussian blue"))
+        } else {
+          XCTAssertTrue(app.staticTexts["reference-intro"].waitForExistence(timeout: 5))
+          XCTAssertTrue(app.staticTexts["Maiko’s birthday"].exists)
+          XCTAssertTrue(app.staticTexts["Wednesday, April 1"].exists)
+          XCTAssertTrue(app.staticTexts["Apr 17, 3:00–4:00 PM"].exists)
+          let scroll = app.scrollViews["chat-document-scroll"]
+          for _ in 0..<4 {
+            if app.staticTexts["Hunter’s birthday"].isHittable { break }
+            scroll.swipeUp()
+          }
+          XCTAssertTrue(app.staticTexts["Hunter’s birthday"].isHittable)
+        }
+        attach("reference-\(scenario)-\(appearance)", app: app)
+        app.buttons["original-source"].tap()
+        XCTAssertEqual(app.staticTexts["source-text-0"].label, "Reference source for \(scenario).")
+        app.terminate()
+      }
+    }
+  }
+
+  func testReadingHierarchyHasOneTitleAndSelectedPanel() {
+    prepareOrientation()
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--chat-rich-output"]
+    app.launch()
+    send("Show the workshop document.", app: app)
+    waitForRevision(1, app: app)
+    XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "Workshop readiness")).count, 1)
+    if UIDevice.current.userInterfaceIdiom != .pad {
+      XCTAssertEqual(app.buttons["document-panel"].value as? String, "Selected")
+    }
+    attach("polished-reading-hierarchy", app: app)
+  }
+
+  func testWideLayoutRetainsConversationAfterSubmission() {
+    guard UIDevice.current.userInterfaceIdiom == .pad else { return }
+    prepareOrientation()
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--chat-rich-output"]
+    app.launch()
+    send("Keep the conversation beside the document.", app: app)
+    waitForRevision(1, app: app)
+    XCTAssertTrue(app.scrollViews["chat-transcript"].exists)
+    XCTAssertTrue(app.staticTexts["Document 1 ready."].isHittable)
+    XCTAssertFalse(app.staticTexts["source-text-0"].exists)
+    app.buttons["original-source"].tap()
+    XCTAssertTrue(app.staticTexts["source-text-0"].exists)
+    app.buttons["comparison-chat"].tap()
+    XCTAssertTrue(app.staticTexts["Document 1 ready."].isHittable)
+    attach("wide-conversation-and-document", app: app)
+  }
+
+  func testDetailsKeepsMetadataOutOfTheReadingPage() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--chat-rich-output", "--appearance", "light"]
+    app.launch()
+    XCTAssertFalse(app.staticTexts["chat-provider-label"].exists)
+    XCTAssertFalse(app.staticTexts["chat-revision"].exists)
+    XCTAssertFalse(app.buttons["chat-show-json"].exists)
+    let details = app.buttons["chat-details"]
+    XCTAssertTrue(details.waitForExistence(timeout: 5))
+    details.tap()
+    XCTAssertTrue(app.staticTexts["chat-provider-label"].label.contains("generated on Mac"))
+    app.buttons["Done"].tap()
+    send("Display the recorded workshop document", app: app)
+    waitForRevision(1, app: app)
+    details.tap()
+    XCTAssertEqual(app.staticTexts["chat-revision"].label, "DOCUMENT · 1")
+    app.buttons["chat-show-json"].tap()
+    XCTAssertTrue(app.staticTexts["chat-json-source"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["chat-json-source"].label.contains("chart"))
+    attach("document-details", app: app)
+    app.buttons["Done"].tap()
+    attach("reading-page", app: app)
+  }
+
+  func testLongOriginalTextRemainsWithGeneratedCharts() {
+    prepareOrientation()
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--chat-rich-output", "--appearance", "light"]
+    app.launch()
+    let passage = String(repeating: "The workshop has 12 volunteers. Safety checks are 60 percent complete. Keep this original wording unchanged. ", count: 12) + "Original ending: preserve this sentence."
+    send(passage, app: app)
+    waitForRevision(1, app: app)
+    XCTAssertFalse(app.staticTexts["source-text-0"].exists)
+    XCTAssertTrue(app.staticTexts["Workshop readiness"].firstMatch.isHittable)
+    attach("result-first-long-passage", app: app)
+    app.buttons["original-source"].tap()
+    XCTAssertEqual(app.staticTexts["source-text-0"].label, passage)
+    attach("complete-original-source", app: app)
+    if UIDevice.current.userInterfaceIdiom == .pad {
+      app.buttons["comparison-chat"].tap()
+    } else {
+      app.buttons["Done"].tap()
+    }
+    send("Keep the same source and show its chart.", app: app)
+    waitForRevision(2, app: app)
+    app.buttons["original-source"].tap()
+    XCTAssertEqual(app.staticTexts["source-text-0"].label, passage)
+    XCTAssertEqual(app.staticTexts["source-text-1"].label, "Keep the same source and show its chart.")
+    if UIDevice.current.userInterfaceIdiom == .pad {
+      app.buttons["comparison-chat"].tap()
+    } else {
+      app.buttons["Done"].tap()
+    }
+    app.buttons["chat-reset"].tap()
+    XCTAssertFalse(app.staticTexts["source-text-0"].exists)
+    XCTAssertFalse(app.buttons["original-source"].exists)
+  }
+
   func testWeatherMetricDetailsWrapAtDefaultAndAccessibilityType() {
     XCUIDevice.shared.orientation = UIDevice.current.userInterfaceIdiom == .pad ? .landscapeLeft : .portrait
     let app = XCUIApplication()
@@ -288,7 +419,9 @@ import XCTest
     app.launchArguments = ["--chat-fixture", "slow", "--appearance", "light"]
     app.launch()
     XCTAssertTrue(app.staticTexts["Start with an idea"].waitForExistence(timeout: 10))
+    app.buttons["chat-details"].tap()
     XCTAssertTrue(app.staticTexts["chat-provider-label"].label.contains("not AI generation"))
+    app.buttons["Done"].tap()
     attach("chat-synthetic-empty", app: app)
     send("Make a volunteer plan", app: app)
     XCTAssertTrue(app.activityIndicators["chat-loading-indicator"].waitForExistence(timeout: 3))
@@ -306,6 +439,7 @@ import XCTest
     XCTAssertTrue(app.staticTexts["chat-action-result"].isHittable)
     XCTAssertLessThan(app.staticTexts["chat-action-result"].frame.maxY, composer.frame.minY)
     attach("chat-synthetic-plan", app: app)
+    app.buttons["chat-details"].tap()
     app.buttons["chat-show-json"].tap()
     XCTAssertTrue(app.staticTexts["chat-json-source"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["chat-json-source"].label.contains("\"table\""))
@@ -341,8 +475,10 @@ import XCTest
     for appearance in ["light", "dark"] {
       app.launchArguments = ["--chat-real-outputs", "--appearance", appearance]
       app.launch()
+      app.buttons["chat-details"].tap()
       XCTAssertTrue(app.staticTexts["chat-provider-label"].waitForExistence(timeout: 10))
       XCTAssertTrue(app.staticTexts["chat-provider-label"].label.contains("generated on Mac"))
+      app.buttons["Done"].tap()
       for turn in 1...3 {
         send("Display recorded Mac generation \(turn)", app: app)
         waitForRevision(turn, app: app)
@@ -356,6 +492,7 @@ import XCTest
           XCTAssertTrue(note.isHittable)
           attach("chat-apple-\(appearance)-updated-details", app: app)
         }
+        app.buttons["chat-details"].tap()
         app.buttons["chat-show-json"].tap()
         XCTAssertTrue(app.staticTexts["chat-json-source"].waitForExistence(timeout: 5))
         let json = app.staticTexts["chat-json-source"].label
@@ -382,14 +519,17 @@ import XCTest
     for appearance in ["light", "dark"] {
       app.launchArguments = ["--chat-rich-output", "--appearance", appearance]
       app.launch()
+      app.buttons["chat-details"].tap()
       XCTAssertTrue(app.staticTexts["chat-provider-label"].waitForExistence(timeout: 10))
       XCTAssertTrue(app.staticTexts["chat-provider-label"].label.contains("generated on Mac"))
+      app.buttons["Done"].tap()
       send("Display the synthetic workshop dashboard generated on Mac", app: app)
       waitForRevision(1, app: app)
       attach("rich-apple-\(appearance)-top", app: app)
       let scroll = app.scrollViews["chat-document-scroll"]
       for _ in 0..<2 { scroll.swipeUp() }
       attach("rich-apple-\(appearance)-details", app: app)
+      app.buttons["chat-details"].tap()
       app.buttons["chat-show-json"].tap()
       XCTAssertTrue(app.staticTexts["chat-json-source"].waitForExistence(timeout: 5))
       let json = app.staticTexts["chat-json-source"].label
@@ -560,10 +700,12 @@ import XCTest
     app.buttons["chat-send"].tap()
   }
   private func waitForRevision(_ revision: Int, app: XCUIApplication) {
+    app.buttons["chat-details"].tap()
     let status = app.staticTexts["chat-revision"]
     let expected = NSPredicate(format: "label == %@", "DOCUMENT · \(revision)")
     expectation(for: expected, evaluatedWith: status)
     waitForExpectations(timeout: 15)
+    app.buttons["Done"].tap()
   }
 
   private func attach(_ name: String, app: XCUIApplication) {

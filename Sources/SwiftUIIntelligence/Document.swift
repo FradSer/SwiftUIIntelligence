@@ -24,12 +24,17 @@ private func location(_ path: [any CodingKey]) -> String {
   path.isEmpty ? "$" : "$." + path.map(\.stringValue).joined(separator: ".")
 }
 
+public enum CardColor: String, Codable, CaseIterable, Sendable {
+  case neutral, blue, orange, green, purple
+}
+
 /// Immutable nodes can only be created by the constrained decoder.
 public struct UINode: Codable, Identifiable, Sendable {
   public enum Kind: String, Codable, Sendable, CaseIterable {
     case vstack, hstack, grid, text, button, section, list, table, callout, metric, iconList, badge, progress, chart, form, control, navigationLink, timeline
   }
   public enum TextStyle: String, Codable, Sendable { case title, headline, body, caption }
+  public let cardColor: CardColor?
   public let id: String
   public let type: Kind
   public let children: [UINode]
@@ -62,7 +67,7 @@ public struct UINode: Codable, Identifiable, Sendable {
   public let events: [TimelineEvent]
 
   private enum CodingKeys: String, CodingKey {
-    case id, type, children, spacing, columnCount, text, style, title, action, items, columns, rows, tone, icon, label, value, detail, iconItems, completed, total, chartStyle, points, controlType, binding, destination, events
+    case cardColor, id, type, children, spacing, columnCount, text, style, title, action, items, columns, rows, tone, icon, label, value, detail, iconItems, completed, total, chartStyle, points, controlType, binding, destination, events
   }
 
   public init(from decoder: any Decoder) throws {
@@ -77,6 +82,7 @@ public struct UINode: Codable, Identifiable, Sendable {
       )
     }
     type = kind
+    cardColor = values.contains(.cardColor) ? try values.decode(CardColor.self, forKey: .cardColor) : nil
     items = kind == .list ? try values.decode([String].self, forKey: .items) : []
     columns = kind == .table ? try values.decode([String].self, forKey: .columns) : []
     rows = kind == .table ? try values.decode([[String]].self, forKey: .rows) : []
@@ -99,8 +105,8 @@ public struct UINode: Codable, Identifiable, Sendable {
     case .vstack, .hstack, .grid, .section, .form:
       try checkKeys(
         decoder,
-        allowed: kind == .grid ? ["id", "type", "children", "spacing", "columnCount"] : (kind == .section || kind == .form)
-          ? ["id", "type", "children", "title", "spacing", "icon"] : ["id", "type", "children", "spacing"])
+        allowed: kind == .grid ? ["cardColor", "id", "type", "children", "spacing", "columnCount"] : (kind == .section || kind == .form)
+          ? ["cardColor", "id", "type", "children", "title", "spacing", "icon"] : ["cardColor", "id", "type", "children", "spacing"])
       children = try values.decode([UINode].self, forKey: .children)
       spacing = values.contains(.spacing) ? try values.decode(Double.self, forKey: .spacing) : 16
       text = ""
@@ -111,7 +117,7 @@ public struct UINode: Codable, Identifiable, Sendable {
       try checkKeys(
         decoder,
         allowed: kind == .text
-          ? ["id", "type", "text", "style", "icon"] : ["id", "type", "text", "tone", "icon"])
+          ? ["cardColor", "id", "type", "text", "style", "icon"] : ["cardColor", "id", "type", "text", "tone", "icon"])
       text = try values.decode(String.self, forKey: .text)
       style = values.contains(.style) ? try values.decode(TextStyle.self, forKey: .style) : .body
       children = []
@@ -121,7 +127,7 @@ public struct UINode: Codable, Identifiable, Sendable {
     case .list, .table:
       try checkKeys(
         decoder,
-        allowed: kind == .list ? ["id", "type", "items"] : ["id", "type", "columns", "rows"])
+        allowed: kind == .list ? ["cardColor", "id", "type", "items"] : ["cardColor", "id", "type", "columns", "rows"])
       children = []
       spacing = 0
       text = ""
@@ -129,7 +135,7 @@ public struct UINode: Codable, Identifiable, Sendable {
       title = ""
       action = ""
     case .button:
-      try checkKeys(decoder, allowed: ["id", "type", "title", "action", "icon"])
+      try checkKeys(decoder, allowed: ["cardColor", "id", "type", "title", "action", "icon"])
       title = try values.decode(String.self, forKey: .title)
       action = try values.decode(String.self, forKey: .action)
       children = []
@@ -137,16 +143,16 @@ public struct UINode: Codable, Identifiable, Sendable {
       text = ""
       style = .body
     case .control, .navigationLink, .timeline:
-      let fields: Set<String> = kind == .control ? ["id", "type", "title", "controlType", "binding"] : kind == .navigationLink ? ["id", "type", "title", "destination"] : ["id", "type", "title", "events"]
+      let fields: Set<String> = kind == .control ? ["cardColor", "id", "type", "title", "controlType", "binding"] : kind == .navigationLink ? ["cardColor", "id", "type", "title", "destination"] : ["cardColor", "id", "type", "title", "events"]
       try checkKeys(decoder, allowed: fields)
       title = try values.decode(String.self, forKey: .title)
       children = []; spacing = 0; text = ""; style = .body; action = ""
     case .metric, .iconList, .progress, .chart:
       let fields: Set<String> = switch kind {
-      case .metric: ["id", "type", "label", "value", "detail", "icon"]
-      case .iconList: ["id", "type", "iconItems"]
-      case .progress: ["id", "type", "title", "completed", "total", "icon"]
-      default: ["id", "type", "title", "chartStyle", "points"]
+      case .metric: ["cardColor", "id", "type", "label", "value", "detail", "icon"]
+      case .iconList: ["cardColor", "id", "type", "iconItems"]
+      case .progress: ["cardColor", "id", "type", "title", "completed", "total", "icon"]
+      default: ["cardColor", "id", "type", "title", "chartStyle", "points"]
       }
       try checkKeys(decoder, allowed: fields)
       if kind == .metric || kind == .progress {
@@ -159,6 +165,7 @@ public struct UINode: Codable, Identifiable, Sendable {
 
   public func encode(to encoder: any Encoder) throws {
     var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encodeIfPresent(cardColor, forKey: .cardColor)
     try c.encode(id, forKey: .id)
     try c.encode(type, forKey: .type)
     try c.encodeIfPresent(icon, forKey: .icon)

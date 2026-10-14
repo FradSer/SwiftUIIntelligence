@@ -1,27 +1,33 @@
 import SwiftUI
 
-/// Native regular Liquid Glass cards with system-relative concentric corners.
-/// A 20pt minimum is this library's card fallback, not a universal Apple radius.
-/// No added tint, rim, lining, border or shadow; controls retain native appearance.
+/// Regular Liquid Glass cards use concentric corners without added shadows.
 public struct SwiftUIIntelligenceSurface: ViewModifier {
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.swiftUIIntelligenceTestReduceTransparency) private var testReduceTransparency
   private let shape = ConcentricRectangle(corners: .concentric(minimum: .fixed(20)))
   private let inset: CGFloat
-  public init(inset: CGFloat = 18) { self.inset = max(0, inset) }
+  private let cardColor: CardColor
+  public init(inset: CGFloat = 18, cardColor: CardColor = .neutral) {
+    self.inset = max(0, inset)
+    self.cardColor = cardColor
+  }
   public func body(content: Content) -> some View {
     Group {
       if reduceTransparency || testReduceTransparency {
-        content.padding(inset).background(.background, in: shape)
+        content.padding(inset).background {
+            shape.fill(.background)
+              .overlay {
+                if cardColor != .neutral { shape.fill(cardColor.swiftUIColor.opacity(0.12)) }
+              }
+          }
       } else {
-        content.padding(inset).glassEffect(in: shape)
+        content.padding(inset).glassEffect(cardColor == .neutral ? .regular : .regular.tint(cardColor.swiftUIColor.opacity(0.22)), in: shape)
       }
     }
   }
 }
 
 /// Neutral system background shared by standalone, embedded and example views.
-/// Retains the public entry point without imposing a proprietary visual theme.
 public struct SwiftUIIntelligenceBackdrop: View {
   public init() {}
   public var body: some View {
@@ -33,9 +39,21 @@ private struct GlassTestReduceTransparencyKey: EnvironmentKey {
   static let defaultValue = false
 }
 extension EnvironmentValues {
-  /// SwiftUIIntelligence-owned test preview only; production reads the public system value.
+  /// Test override for the system Reduce Transparency fallback.
   @_spi(Testing) public var swiftUIIntelligenceTestReduceTransparency: Bool {
     get { self[GlassTestReduceTransparencyKey.self] }
     set { self[GlassTestReduceTransparencyKey.self] = newValue }
+  }
+}
+
+extension CardColor {
+  var swiftUIColor: Color {
+    switch self {
+    case .neutral: .primary
+    case .blue: .blue
+    case .orange: .orange
+    case .green: .green
+    case .purple: .purple
+    }
   }
 }

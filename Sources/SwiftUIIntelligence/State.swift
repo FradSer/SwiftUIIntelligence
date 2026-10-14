@@ -2,17 +2,19 @@ import Foundation
 import Observation
 
 public struct TimelineEvent: Codable, Sendable {
+  public let cardColor: CardColor?
   public let time: String
   public let title: String
   public let detail: String
   public init(from decoder: any Decoder) throws {
-    try checkKeys(decoder, allowed: ["time", "title", "detail"])
+    try checkKeys(decoder, allowed: ["time", "title", "detail", "cardColor"])
     let c = try decoder.container(keyedBy: CodingKeys.self)
+    cardColor = c.contains(.cardColor) ? try c.decode(CardColor.self, forKey: .cardColor) : nil
     time = try c.decode(String.self, forKey: .time)
     title = try c.decode(String.self, forKey: .title)
     detail = try c.decode(String.self, forKey: .detail)
   }
-  private enum CodingKeys: String, CodingKey { case time, title, detail }
+  private enum CodingKeys: String, CodingKey { case time, title, detail, cardColor }
 }
 
 /// JSON primitives have explicit Swift types. No expression evaluation or coercion.
