@@ -44,7 +44,7 @@ Package 与业务无关：没有天气、金融或任务模板。
 
 | Product | 用途 |
 |---|---|
-| `SwiftUIIntelligence` | 文档模型、JSON Schema 与 prompt 契约、provider 协议、聊天会话、严格校验、原生渲染器、Liquid Glass 外观、宿主动作注册 |
+| `SwiftUIIntelligence` | 文档模型、JSON Schema 与 prompt 契约、provider 协议、聊天会话、严格校验、原生渲染器、Liquid Glass 阅读卡片、宿主动作注册 |
 | `SwiftUIIntelligenceFoundationModels` | 可选的 Apple 本机适配器。不需要 API key。使用 `@Generable` 内容与意图生成，以及 `GenerationSchema` 文档生成 |
 | `SwiftUIIntelligenceWeatherDemo` | 天气参考回放、原仪表盘，以及到通用节点的类型化转换 |
 | `SwiftUIIntelligenceModelProbe` | 同机 macOS 的真实模型验收工具。只使用源码中的合成聊天内容 |
@@ -102,6 +102,9 @@ await chat.send("为虚构的笔记 App 写一份简短交接文档。")
 // 状态为 ready 时，用 SwiftUIIntelligenceView(document:actions:state:) 渲染 chat.document。
 await chat.send("添加一节，描述待完成的导出验证。")
 ```
+
+`DocumentChatSession`、`ActionRegistry`、`DocumentState` 和 `SwiftUIIntelligenceView` 都是 `@MainActor`。
+请在 SwiftUI body 或 `@MainActor` 函数中调用。
 
 会话有四个状态：`idle`、`generating`、`ready`、`failed`。失败会给出类型：`input`、`provider` 或 `invalidDocument`。
 
@@ -182,18 +185,27 @@ API key。适配器先规划内容分组，再用各自受约束的会话生成�
 
 ```swift
 let provider = ChatResponseProvider { request in
+  // 闭包返回助手消息文本，因此把文档 JSON 作为 String 返回。
   // 把 request.instructions、request.schemaJSON 和 request.messages 传给当前管线。
-  // 返回助手文档 JSON。
-  try await existingChatbot.generateDocument(request)
+  let json: String = try await existingChatbot.generateDocumentJSON(request)
+  return json
 }
 let chat = DocumentChatSession(provider: provider, registeredActions: ["acknowledge"])
 ```
 
 `existingChatbot` 是宿主自己接口的占位，不是本库的隐藏服务。
+`generateDocumentJSON(_:)` 是返回助手文本的宿主函数，返回 String。
+`ChatResponseProvider(response:)` 把该文本转换为会话校验所用的 JSON 字节。
 
 **宿主自有 HTTPS 后端。** `HTTPDocumentProvider(endpoint:)` 发送 `{messages, instructions, schema}`，
 并期望后端返回完整文档，类型为 `application/json`。端点必须使用 HTTPS，且不能内嵌凭证。
 该 provider 最多读取 64 KiB，超时 45 秒。模型凭证保留在服务端。
+
+**OpenAI 兼容端点。** `OpenAICompatibleDocumentProvider(endpoint:apiKey:model:)` 向 chat-completions
+端点发送 `{model, messages, response_format}`，并读取 `choices[0].message.content` 作为文档 JSON。
+它使用 `URLSession` 与临时配置，发送 Bearer 头，最多读取 64 KiB。端点必须使用 HTTPS；
+唯一的例外是本机回环 HTTP，用于本地模型服务。OpenAI 兼容端点无法表达 guided-generation schema，
+因此该 provider 把 instructions 和 schema 文本放入 system 消息。返回结果经过与其他 provider 相同的严格校验。
 
 示例首选 Apple 生成，没有配置或调用第三方服务。不要把模型密钥放入客户端或源码。
 
@@ -209,17 +221,11 @@ let chat = DocumentChatSession(provider: provider, registeredActions: registry.n
 ## 原生外观
 
 原生控件、`Form`、`Section` 和导航保留 SwiftUI 自动外观。自定义内容卡片通过
-`SwiftUIIntelligenceSurface` 使用默认 regular Liquid Glass，并由默认 `GlassEffectContainer` 分组。
-Package 不添加玻璃 tint、壁纸、额外边框或阴影、rim，或内部装饰衬线。
-
-卡片形状为 `ConcentricRectangle(corners: .concentric(minimum: .fixed(20)))`。这一公开 OS 26 API
-相对容器形状计算圆角。**20 points 是 SwiftUIIntelligence 对独立卡片的最小回退值，不是 Apple 全局默认圆角半径**；
-Apple 未公布统一的卡片圆角。默认 `glassEffect()` 形状是 Capsule。Capsule 不适合高内容面板，
-因此卡片显式使用矩形同心形状。见 [ConcentricRectangle](https://developer.apple.com/documentation/swiftui/concentricrectangle)
-与 [Applying Liquid Glass to custom views](https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views)。
-
-启用「降低透明度」时，自定义卡片在同一形状下使用不透明系统背景。Package 只读取公开系统环境，
-不使用私有 Apple API。字体保持系统文本预设。
+所有自定义卡片通过 `SwiftUIIntelligenceSurface` 使用 regular Liquid Glass，不添加额外阴影。
+「降低透明度」启用时，使用同形状的系统背景回退。
+布局容器不再额外包裹卡片。卡片使用同心圆角，20pt 是库自身的最小回退值。
+Package 使用公开 SwiftUI API，不修改系统设置。
+Demo 的「Details」入口包含模型来源、文档编号以及可选择和复制的 JSON。
 
 ## 示例 App
 
@@ -263,6 +269,15 @@ swift run --scratch-path /tmp/swiftuiintelligence-model-probe --disable-sandbox 
 模型工具调用本机真实 Apple 模型，保存请求、内容草稿、原始响应、规范 JSON 和状态。
 其中的语义断言属于验收工具，不是 SDK 业务规则。
 
+该工具也接受远程 OpenAI 兼容端点：
+
+```sh
+SWIFTUIINTELLIGENCE_API_KEY=<key> swift run --disable-sandbox SwiftUIIntelligenceModelProbe <folder> \
+  --openai-compatible https://<host>/v1/chat/completions <model>
+```
+
+该模式通过网络运行相同的三轮验收，并把 scheme、host 和 model 写入 `transport.txt`。
+
 `evidence/` 目录约 4 GB，只保留在本机，不在私有仓库中，因此上述证据路径只在本地工作区存在。
 本轮结果见 `evidence/expanded-final/VALIDATION.md`。
 
@@ -292,3 +307,11 @@ swift run --scratch-path /tmp/swiftuiintelligence-model-probe --disable-sandbox 
 ## 许可证
 
 未提供 license。仓库为私有，不授予任何权利。
+
+## Liquid Glass 卡片颜色
+
+可选字段 `cardColor` 支持 `neutral`、`blue`、`orange`、`green`、`purple`。
+节点和时间线事件使用相同的有限色板；未知颜色会被拒绝。
+未指定时保留无染色玻璃，旧 JSON 编码不会新增颜色字段。
+事件颜色覆盖独立时间线的颜色；分组内仍共用一张玻璃卡片。
+颜色由数据明确提供，不根据标题猜测类别。降低透明度时使用系统背景回退。

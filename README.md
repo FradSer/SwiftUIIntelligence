@@ -51,7 +51,7 @@ The package is business-neutral: it has no weather, finance, or task templates.
 
 | Product | Purpose |
 |---|---|
-| `SwiftUIIntelligence` | Document model, JSON Schema and prompt contract, provider protocols, chat session, strict validation, native renderer, Liquid Glass surfaces, host action registry |
+| `SwiftUIIntelligence` | Document model, JSON Schema and prompt contract, provider protocols, chat session, strict validation, native renderer, Liquid Glass reading surfaces, host action registry |
 | `SwiftUIIntelligenceFoundationModels` | Optional Apple on-device adapter. No API key. Uses `@Generable` content and intent generation and `GenerationSchema` document generation |
 | `SwiftUIIntelligenceWeatherDemo` | Recorded weather reference replay, the original dashboard, and a typed conversion to generic nodes |
 | `SwiftUIIntelligenceModelProbe` | macOS acceptance tool for real model runs. It uses only the synthetic chat content in the source |
@@ -111,6 +111,9 @@ await chat.send("Create a short handover document for an invented notes app.")
 // Render chat.document with SwiftUIIntelligenceView(document:actions:state:) when the phase is ready.
 await chat.send("Add a section describing the pending export verification.")
 ```
+
+`DocumentChatSession`, `ActionRegistry`, `DocumentState`, and `SwiftUIIntelligenceView` are `@MainActor`.
+Call them from a SwiftUI body or from an `@MainActor` function.
 
 The session exposes four phases: `idle`, `generating`, `ready`, and `failed`. A failure names its
 kind: `input`, `provider`, or `invalidDocument`.
@@ -203,19 +206,30 @@ for general direct generation, inside the model 4096-token context.
 
 ```swift
 let provider = ChatResponseProvider { request in
+  // The closure returns the assistant message text, so return the document JSON as a String.
   // Send request.instructions, request.schemaJSON and request.messages to the current pipeline.
-  // Return the assistant document JSON.
-  try await existingChatbot.generateDocument(request)
+  let json: String = try await existingChatbot.generateDocumentJSON(request)
+  return json
 }
 let chat = DocumentChatSession(provider: provider, registeredActions: ["acknowledge"])
 ```
 
 `existingChatbot` is a placeholder for the host interface, not a hidden service in this library.
+`generateDocumentJSON(_:)` is the host function that returns the assistant text as a String.
+`ChatResponseProvider(response:)` converts that text into the JSON bytes the session validates.
 
 **Host-owned HTTPS backend.** `HTTPDocumentProvider(endpoint:)` posts
 `{messages, instructions, schema}` and expects the complete document as `application/json`.
 The endpoint must use HTTPS and must not carry embedded credentials. The provider reads at most
 64 KiB and uses a 45-second timeout. Model credentials stay on the server.
+
+**OpenAI-compatible endpoint.** `OpenAICompatibleDocumentProvider(endpoint:apiKey:model:)` posts
+`{model, messages, response_format}` to a chat-completions endpoint and reads
+`choices[0].message.content` as the document JSON. It uses `URLSession` with an ephemeral
+configuration, sends a Bearer header, and reads at most 64 KiB. The endpoint must use HTTPS. Plain
+loopback HTTP is the only exception, for a local model server. An OpenAI-compatible endpoint cannot
+express a guided-generation schema, so the provider puts the instructions and the schema text in the
+system message. The reply passes the same strict validation as every other provider.
 
 The example prefers Apple generation. It does not configure or call a third-party service.
 Never put a model key in the client or in the source.
@@ -231,22 +245,13 @@ let chat = DocumentChatSession(provider: provider, registeredActions: registry.n
 
 ## Native appearance
 
-Native controls, `Form`, `Section`, and navigation keep the automatic SwiftUI appearance. Custom
-content cards use regular Liquid Glass through `SwiftUIIntelligenceSurface`, grouped by a default
-`GlassEffectContainer`. The package adds no glass tint, wallpaper, extra border or shadow, rim, or
-decorative lining.
-
-The card shape is `ConcentricRectangle(corners: .concentric(minimum: .fixed(20)))`. This public OS 26
-API calculates the corners relative to the containing shape. **20 points is the SwiftUIIntelligence
-minimum fallback for a standalone card, not an Apple-wide default corner radius**; Apple publishes no
-universal card radius. The default `glassEffect()` shape is a Capsule. A Capsule is unsuitable for a
-tall content panel, so a card uses the rectangular concentric shape. See
-[ConcentricRectangle](https://developer.apple.com/documentation/swiftui/concentricrectangle) and
-[Applying Liquid Glass to custom views](https://developer.apple.com/documentation/swiftui/applying-liquid-glass-to-custom-views).
-
-When Reduce Transparency is enabled, custom cards use an opaque system background in the same shape.
-The package reads the public system environment and uses no private Apple API. Fonts remain system
-text presets.
+Native controls, `Form`, `Section`, and navigation keep the automatic SwiftUI appearance.
+Content cards use regular Liquid Glass through `SwiftUIIntelligenceSurface`.
+They add no custom shadows. Layout containers do not add enclosing cards.
+The card shape uses concentric corners with a library-specific 20-point minimum fallback.
+The package uses public SwiftUI APIs and changes no system settings.
+The demo Details entry contains model provenance, document revision, and selectable document JSON.
+Fonts remain system text presets.
 
 ## Example app
 
@@ -293,6 +298,16 @@ The model probe calls the real Apple model on this Mac and saves the request, th
 raw response, the canonical JSON, and the state. Its semantic assertions are acceptance-tool checks,
 not SDK business rules.
 
+The probe also accepts a remote OpenAI-compatible endpoint:
+
+```sh
+SWIFTUIINTELLIGENCE_API_KEY=<key> swift run --disable-sandbox SwiftUIIntelligenceModelProbe <folder> \
+  --openai-compatible https://<host>/v1/chat/completions <model>
+```
+
+This mode runs the same three-turn acceptance over the network and writes `transport.txt` with the
+scheme, host, and model it used.
+
 The `evidence/` directory is about 4 GB and stays on this Mac. It is not in the private repository,
 so the evidence paths exist only in the local workspace. See
 `evidence/expanded-final/VALIDATION.md` for the current round.
@@ -324,3 +339,13 @@ and the references, not the truth of the content.
 ## License
 
 No license is supplied. The repository is private and grants no rights.
+
+## Liquid Glass card colors
+
+Optional `cardColor` accepts `neutral`, `blue`, `orange`, `green`, or `purple`.
+Nodes and timeline events use the same palette. Unknown values are rejected.
+Omitted colors preserve the neutral appearance and are omitted from canonical JSON.
+Standalone event colors override timeline colors. A containing section keeps one surface.
+Colors are explicit presentation data, not categories inferred from titles.
+The shared surface uses native glass tint. Reduce Transparency uses an opaque system background with a subdued category fill.
+Primary text remains system-colored. Event icons use the supplied category color.
