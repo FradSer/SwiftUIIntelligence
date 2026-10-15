@@ -21,11 +21,11 @@ import SwiftUIIntelligenceFoundationModels
         try await richProbe(folder)
         return
       }
-      let prompts = [
-        "Create a short neighborhood library volunteer plan. Include a title, one preparation section with a three-item list, and a table with exactly two columns Task and Time, exactly two rows: Welcome desk | 10am; Book sorting | 2pm. These are invented Saturday shifts. Copy these values exactly. Do not add other shifts or names.",
-        "Revise the existing volunteer plan. In the table change Book sorting from 2pm to 3pm, retaining Welcome desk at 10am. Also add a new callout node with the exact text: Volunteers should arrive 10 minutes early. Preserve the other preparation items.",
-        "Create a NEW document about a different topic: an invented offline notes app handover. Use ONLY this content: checklist items Check offline save and Check restore; warning note Export testing is pending. Put the checklist in a section with a list and the warning in a callout. Do not add meetings, schedules, versions, names, dates or deadlines. Do not carry over any library content.",
-      ]
+      if let flag = args.firstIndex(of: "--openai-compatible"), args.indices.contains(flag + 2) {
+        try await openAIProbe(folder, endpoint: args[flag + 1], model: args[flag + 2])
+        return
+      }
+      let prompts = Self.handoverPrompts
       var messages: [ChatMessage] = []
       var semanticFailures: [String] = []
       for (index, prompt) in prompts.enumerated() {
@@ -168,4 +168,47 @@ import SwiftUIIntelligenceFoundationModels
     }
   }
 
+  static let handoverPrompts: [String] = [
+    "Create a short neighborhood library volunteer plan. Include a title, one preparation section with a three-item list, and a table with exactly two columns Task and Time, exactly two rows: Welcome desk | 10am; Book sorting | 2pm. These are invented Saturday shifts. Copy these values exactly. Do not add other shifts or names.",
+    "Revise the existing volunteer plan. In the table change Book sorting from 2pm to 3pm, retaining Welcome desk at 10am. Also add a new callout node with the exact text: Volunteers should arrive 10 minutes early. Preserve the other preparation items.",
+    "Create a NEW document about a different topic: an invented offline notes app handover. Use ONLY this content: checklist items Check offline save and Check restore; warning note Export testing is pending. Put the checklist in a section with a list and the warning in a callout. Do not add meetings, schedules, versions, names, dates or deadlines. Do not carry over any library content.",
+  ]
+
+  /// Acceptance run against a remote OpenAI-compatible endpoint through URLSession.
+  static func openAIProbe(_ folder: URL, endpoint: String, model: String) async throws {
+    guard let url = URL(string: endpoint) else { throw UIError("Invalid endpoint URL.") }
+    guard let key = ProcessInfo.processInfo.environment["SWIFTUIINTELLIGENCE_API_KEY"],
+      !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { throw UIError("Set SWIFTUIINTELLIGENCE_API_KEY to the endpoint API key.") }
+    let provider = try OpenAICompatibleDocumentProvider(endpoint: url, apiKey: key, model: model)
+    let transport = "provider=OpenAICompatibleDocumentProvider scheme=\(url.scheme ?? "unknown") host=\(url.host ?? "unknown") model=\(model)" + "\n"
+    try Data(transport.utf8).write(to: folder.appendingPathComponent("transport.txt"))
+    var messages: [ChatMessage] = []
+    var semanticFailures: [String] = []
+    for (index, prompt) in handoverPrompts.enumerated() {
+      messages.append(ChatMessage(role: .user, content: prompt))
+      let request = try DocumentGenerationRequest(messages: messages)
+      try request.schemaJSON.write(to: folder.appendingPathComponent("schema.json"))
+      try request.conversationJSON().write(to: folder.appendingPathComponent("request-\(index + 1).json"))
+      let start = Date()
+      let raw = try await provider.generate(request)
+      try raw.write(to: folder.appendingPathComponent("raw-\(index + 1).json"))
+      let valid = try UIDocument.decode(raw, registeredActions: [])
+      let json = try DocumentGenerationContract.canonicalJSON(valid)
+      do { try verifySemantics(valid, turn: index + 1) } catch {
+        semanticFailures.append(error.localizedDescription)
+        print(error.localizedDescription)
+      }
+      try json.write(to: folder.appendingPathComponent("document-\(index + 1).json"))
+      messages.append(ChatMessage(role: .assistant, content: String(decoding: json, as: UTF8.self)))
+      let seconds = String(format: "%.2f", Date().timeIntervalSince(start))
+      print("Remote response \(index + 1): validated \(json.count) bytes in \(seconds)s")
+    }
+    let status =
+      semanticFailures.isEmpty
+      ? "passed: 3 remote provider generations through URLSession, strict structure validation and authored semantic assertions, including follow-up and different domain" + "\n"
+      : "semantic failures after 3 structurally valid remote responses:" + "\n" + semanticFailures.joined(separator: "\n") + "\n"
+    try Data(status.utf8).write(to: folder.appendingPathComponent("status.txt"))
+    if !semanticFailures.isEmpty { exit(2) }
+  }
 }
