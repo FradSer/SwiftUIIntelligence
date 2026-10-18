@@ -40,15 +40,36 @@ public struct IconItem: Codable, Sendable {
 }
 
 public struct ChartPoint: Codable, Sendable {
+  public let binding: String?
   public let label: String
   public let value: Double
   public let series: String
   public init(from decoder: any Decoder) throws {
-    try checkKeys(decoder, allowed: ["label", "value", "series"])
+    try checkKeys(decoder, allowed: ["label", "value", "series", "binding"])
     let c = try decoder.container(keyedBy: CodingKeys.self)
+    binding = c.contains(.binding) ? try c.decode(String.self, forKey: .binding) : nil
     label = try c.decode(String.self, forKey: .label)
     value = try c.decode(Double.self, forKey: .value)
     series = try c.decode(String.self, forKey: .series)
   }
-  private enum CodingKeys: String, CodingKey { case label, value, series }
+  func resolved(in state: [String: StateValue]) throws -> ChartPoint {
+    ChartPoint(label: label, value: try resolvedValue(in: state), series: series)
+  }
+
+  init(label: String, value: Double, series: String) {
+    self.label = label
+    self.value = value
+    self.series = series
+    self.binding = nil
+  }
+
+  public func resolvedValue(in state: [String: StateValue]) throws -> Double {
+    guard let binding else { return value }
+    guard case .number(let number) = state[binding], number.isFinite, abs(number) <= 1e9 else {
+      throw UIError("Chart point requires a finite numeric state value.")
+    }
+    return number
+  }
+
+  private enum CodingKeys: String, CodingKey { case label, value, series, binding }
 }

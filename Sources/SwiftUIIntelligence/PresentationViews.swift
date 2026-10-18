@@ -16,6 +16,8 @@ struct SymbolText: View {
 }
 
 struct PresentationNodeView: View {
+  @Environment(DocumentState.self) private var state
+  private var resolvedPoints: [ChartPoint]? { try? node.resolvedPoints(values: state.values, records: state.records) }
   let node: UINode
   var showsTitle = true
   @Environment(\.colorScheme) private var colorScheme
@@ -26,10 +28,11 @@ struct PresentationNodeView: View {
   @ViewBuilder var body: some View {
     switch node.type {
     case .metric:
+      let metricValue = (try? node.resolvedMetricValue(values: state.values)) ?? node.value
       VStack(alignment: .leading, spacing: 8) {
         SymbolText(text: node.label, icon: node.icon).font(.caption).lineLimit(2).minimumScaleFactor(0.85).foregroundStyle(.secondary).frame(minHeight: 32, alignment: .topLeading)
-        Text(node.value).font(.title2).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
-        if !node.detail.isEmpty && node.detail != node.value { Text(node.detail).font(.caption).foregroundStyle(.secondary) }
+        Text(metricValue).font(.title2).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+        if !node.detail.isEmpty && node.detail != metricValue { Text(node.detail).font(.caption).foregroundStyle(.secondary) }
       }.frame(maxWidth: .infinity, alignment: .leading)
     case .iconList:
       VStack(alignment: .leading, spacing: 12) {
@@ -50,21 +53,24 @@ struct PresentationNodeView: View {
           .font(.caption).foregroundStyle(.secondary).monospacedDigit()
       }.accessibilityElement(children: .combine)
     case .chart:
+      if let points = resolvedPoints {
       VStack(alignment: .leading, spacing: 12) {
         if showsTitle { Text(node.title).font(.headline) }
+        if points.isEmpty { Text("No matching items.") }
+        else {
         if node.chartStyle == .radar {
-          RadarNodeView(points: node.points, color: colors[0]).frame(height: 220).frame(minWidth: 180)
+          RadarNodeView(points: points, color: colors[0]).frame(height: 220).frame(minWidth: 180)
         } else {
-          chart.frame(height: 210).frame(minWidth: 180)
-          if let selectedLabel {
-            Text(node.points.filter { $0.label == selectedLabel }.map {
+          chart(points: points).frame(height: 210).frame(minWidth: 180)
+          if let selectedLabel, points.contains(where: { $0.label == selectedLabel }) {
+            Text(points.filter { $0.label == selectedLabel }.map {
               "\($0.label) · \($0.series): \($0.value.formatted())"
             }.joined(separator: "\n")).font(.caption).accessibilityIdentifier(node.id + "-selection")
           }
         }
         // Visible values accompany color, chart axes and VoiceOver; charts never hide data.
         if node.chartStyle == .donut {
-          ForEach(Array(node.points.enumerated()), id: \.offset) { index, point in
+          ForEach(Array(points.enumerated()), id: \.offset) { index, point in
             HStack {
               Circle().fill(colors[index % colors.count]).frame(width: 8, height: 8).accessibilityHidden(true)
               Text(point.label); Spacer(); Text(point.value.formatted()).monospacedDigit()
@@ -72,19 +78,25 @@ struct PresentationNodeView: View {
           }
         }
       }
+      }
+      } else {
+        Text("Chart values are not available.").accessibilityIdentifier(node.id + "-unavailable")
+      }
     default: EmptyView()
     }
   }
   private var toneColor: Color { node.tone == .warning ? .orange : node.tone == .success ? .green : .blue }
-  private var chart: some View {
+  private func chart(points: [ChartPoint]) -> some View {
     Chart {
-      ForEach(Array(node.points.enumerated()), id: \.offset) { _, point in
+      ForEach(Array(points.enumerated()), id: \.offset) { _, point in
         if node.chartStyle == .donut {
           SectorMark(angle: .value("Value", point.value), innerRadius: .ratio(0.72), angularInset: 1)
             .foregroundStyle(by: .value("Category", point.label))
         } else if node.chartStyle == .bar {
           BarMark(x: .value("Label", point.label), y: .value("Value", point.value))
             .foregroundStyle(by: .value("Series", point.series)).position(by: .value("Series", point.series))
+            .accessibilityLabel("\(point.label), \(point.series)")
+            .accessibilityValue(point.value.formatted())
         } else {
           if node.chartStyle == .area {
             AreaMark(x: .value("Label", point.label), y: .value("Value", point.value), series: .value("Series", point.series))
@@ -96,7 +108,7 @@ struct PresentationNodeView: View {
             .foregroundStyle(by: .value("Series", point.series))
         }
       }
-      if node.chartStyle != .donut, let selectedLabel {
+      if node.chartStyle != .donut, let selectedLabel, points.contains(where: { $0.label == selectedLabel }) {
         RuleMark(x: .value("Label", selectedLabel)).foregroundStyle(.secondary)
       }
     }
@@ -104,6 +116,12 @@ struct PresentationNodeView: View {
     .chartLegend(node.chartStyle == .donut ? .hidden : .visible)
     .chartXSelection(value: $selectedLabel)
     .accessibilityLabel(node.title)
+    .accessibilityChildren {
+      ForEach(Array(points.enumerated()), id: \.offset) { _, point in
+        Text("\(point.label), \(point.series)")
+          .accessibilityValue(point.value.formatted())
+      }
+    }
   }
 }
 

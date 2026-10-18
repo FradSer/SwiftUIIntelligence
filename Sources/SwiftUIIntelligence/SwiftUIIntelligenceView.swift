@@ -9,16 +9,20 @@ import SwiftUI
   private let scrollTargetID: String?
   @State private var localState = DocumentState()
   private let suppliedState: DocumentState?
+  private let calculations: CalculationRegistry?
+  @State private var calculationError: String?
+  @State private var loadedIdentity: LoadIdentity?
   @State private var actionPending = false
   @State private var result = "Ready. Tap an action to call the host."
 
-  public init(data: Data, actions: ActionRegistry, embedded: Bool = false, scrollTargetID: String? = nil, state: DocumentState? = nil) {
+  public init(data: Data, actions: ActionRegistry, embedded: Bool = false, scrollTargetID: String? = nil, state: DocumentState? = nil, calculations: CalculationRegistry? = nil) {
+    self.calculations = calculations
     self.suppliedState = state
     self.actions = actions
     self.embedded = embedded
     self.scrollTargetID = scrollTargetID
     do {
-      document = try UIDocument.decode(data, registeredActions: actions.names)
+      document = try UIDocument.decode(data, registeredActions: actions.names, registeredCalculations: calculations?.names ?? [])
       error = nil
     } catch {
       document = nil
@@ -26,13 +30,14 @@ import SwiftUI
     }
   }
 
-  public init(document: UIDocument, actions: ActionRegistry, embedded: Bool = false, scrollTargetID: String? = nil, state: DocumentState? = nil) {
+  public init(document: UIDocument, actions: ActionRegistry, embedded: Bool = false, scrollTargetID: String? = nil, state: DocumentState? = nil, calculations: CalculationRegistry? = nil) {
+    self.calculations = calculations
     self.suppliedState = state
     self.actions = actions
     self.embedded = embedded
     self.scrollTargetID = scrollTargetID
     do {
-      try document.validate(registeredActions: actions.names)
+      try document.validate(registeredActions: actions.names, registeredCalculations: calculations?.names ?? [])
       self.document = document
       error = nil
     } catch {
@@ -41,15 +46,48 @@ import SwiftUI
     }
   }
 
+  private struct LoadIdentity: Equatable {
+    let documentJSON: Data?
+    let registryRevision: UUID?
+    let stateIdentity: ObjectIdentifier
+  }
+
+  private var loadIdentity: LoadIdentity {
+    LoadIdentity(documentJSON: document.flatMap { try? DocumentGenerationContract.canonicalJSON($0) },
+      registryRevision: calculations?.revision, stateIdentity: ObjectIdentifier(suppliedState ?? localState))
+  }
+
   public var body: some View {
-    VStack(spacing: 0) { renderedContent }
+    VStack(spacing: 0) {
+      if let calculationError {
+        Text(calculationError).foregroundStyle(.primary).accessibilityIdentifier("calculation-error")
+      }
+      if document == nil || loadedIdentity == loadIdentity {
+        renderedContent
+      } else if calculationError == nil {
+        ProgressView("Preparing document")
+      }
+    }
       
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("sdk-native-glass-document")
       .environment(suppliedState ?? localState)
       .environment(\.documentDestinations, destinations)
-      .task(id: document.map { try? DocumentGenerationContract.canonicalJSON($0) }) {
-        if let document { (suppliedState ?? localState).load(document) }
+      .task(id: loadIdentity) {
+        if let document {
+          calculationError = nil
+          let state = suppliedState ?? localState
+          if let calculations {
+            do {
+              try state.load(document, calculations: calculations)
+              calculationError = nil
+            } catch { calculationError = error.localizedDescription }
+          } else {
+            state.load(document)
+            calculationError = state.errorMessage
+          }
+          if calculationError == nil { loadedIdentity = loadIdentity }
+        }
       }
   }
 
@@ -184,7 +222,7 @@ private struct NodeView: View {
       Group {
         if showsSurface { content.modifier(SwiftUIIntelligenceSurface(cardColor: effectiveCardColor)) } else { content }
       }.id(node.id)
-    } else if node.type == .vstack || node.type == .hstack || node.type == .grid || node.type == .section || node.type == .form {
+    } else if node.type == .vstack || node.type == .hstack || node.type == .grid || node.type == .section || node.type == .form || (node.type == .table && !node.editableFields.isEmpty) {
       surface.id(node.id).accessibilityElement(children: .contain).accessibilityIdentifier(node.id)
     } else {
       surface.id(node.id).accessibilityIdentifier(node.id)
@@ -226,7 +264,7 @@ private struct NodeView: View {
         })
     case .text:
       AnyView(
-        SymbolText(text: node.text, icon: node.icon).font(font).foregroundStyle(node.style == .caption ? .secondary : .primary))
+        SymbolText(text: displayedText, icon: node.icon).font(font).foregroundStyle(node.style == .caption ? .secondary : .primary))
     case .form:
       AnyView(Section {
         ForEach(node.children.filter { destinations[$0.id] == nil }) {
@@ -244,15 +282,23 @@ private struct NodeView: View {
     case .list:
       AnyView(
         VStack(alignment: .leading, spacing: 10) {
-          ForEach(Array(node.items.enumerated()), id: \.offset) { _, item in
+          if let items = try? node.resolvedItems(in: state.records) {
+          if items.isEmpty { Text("No matching items.") }
+          ForEach(Array(items.enumerated()), id: \.offset) { _, item in
             HStack(alignment: .top, spacing: 10) {
               Text("•").accessibilityHidden(true)
               Text(item).frame(maxWidth: .infinity, alignment: .leading)
             }
           }
+          } else { Text("List values are not available.") }
         })
     case .table:
       AnyView(
+        Group {
+        if !node.editableFields.isEmpty { RecordTableView(node: node) }
+        else if let rows = try? node.resolvedRows(in: state.records) {
+        if rows.isEmpty { Text("No matching items.") }
+        else {
         ViewThatFits(in: .horizontal) {
           Grid(alignment: .topLeading, horizontalSpacing: 18, verticalSpacing: 12) {
             GridRow {
@@ -261,29 +307,34 @@ private struct NodeView: View {
                   minWidth: 110, maxWidth: 200, alignment: .leading)
               }
             }
-            ForEach(Array(node.rows.enumerated()), id: \.offset) { _, row in
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
               GridRow {
-                ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                ForEach(Array(row.enumerated()), id: \.offset) { columnIndex, cell in
                   Text(cell).frame(minWidth: 110, maxWidth: 200, alignment: .leading)
+                    .accessibilityIdentifier(tableCellIdentifier(row: rowIndex, column: columnIndex))
                 }
               }
             }
           }.font(.subheadline).foregroundStyle(.primary)
           VStack(alignment: .leading, spacing: 16) {
-            ForEach(Array(node.rows.enumerated()), id: \.offset) { _, row in
+            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
               VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(node.columns.enumerated()), id: \.offset) { index, column in
                   HStack(alignment: .top) {
                     Text(column).font(.subheadline.bold())
                     Spacer(minLength: 12)
                     Text(row[index]).font(.subheadline).multilineTextAlignment(.trailing)
+                      .accessibilityIdentifier(tableCellIdentifier(row: rowIndex, column: index))
                   }
                 }
               }
               Divider()
             }
           }
-        }.accessibilityElement(children: .contain))
+        }.accessibilityElement(children: .contain)
+        }
+        } else { Text("Table values are not available.") }
+        })
     case .callout:
       AnyView(
         HStack(alignment: .top, spacing: 10) {
@@ -312,9 +363,13 @@ private struct NodeView: View {
     case .timeline:
       AnyView(VStack(alignment: .leading, spacing: 20) {
         Text(node.title).font(.headline)
-        ForEach(Array(node.events.enumerated()), id: \.offset) { _, event in
+        if let events = try? node.resolvedEvents(in: state.records) {
+        if events.isEmpty { Text("No scheduled steps.") }
+        ForEach(Array(events.enumerated()), id: \.offset) { _, event in
           VStack(alignment: .leading, spacing: 8) {
-            Text(event.time).font(.subheadline.weight(.semibold))
+            if let time = try? event.resolvedTime(in: state.values) {
+              Text(time).font(.subheadline.weight(.semibold))
+            }
             Group {
               if showsSurface {
                 timelineRow(event).modifier(SwiftUIIntelligenceSurface(inset: 16, cardColor: event.cardColor ?? effectiveCardColor))
@@ -324,6 +379,7 @@ private struct NodeView: View {
             }
           }
         }
+        } else { Text("Timeline values are not available.") }
       })
     case .button:
       AnyView(
@@ -333,13 +389,19 @@ private struct NodeView: View {
     }
   }
 
+  private func tableCellIdentifier(row: Int, column: Int) -> String {
+    guard let source = node.recordSource, let rows = state.records[source], rows.indices.contains(row),
+      node.recordFields.indices.contains(column) else { return "\(node.id):row:\(row):column:\(column)" }
+    return "\(node.id):\(rows[row].id):\(node.recordFields[column]):\(column)"
+  }
+
   private func timelineRow(_ event: TimelineEvent) -> some View {
     HStack(alignment: .top, spacing: 12) {
       Image(systemName: "calendar").foregroundStyle((event.cardColor ?? effectiveCardColor).swiftUIColor).accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 6) {
         Text(event.title).font(.headline).fixedSize(horizontal: false, vertical: true)
-        if !event.detail.isEmpty {
-          Text(event.detail).font(.subheadline).foregroundStyle(.primary.opacity(0.85))
+        if let detail = try? event.resolvedDetail(in: state.values), !detail.isEmpty {
+          Text(detail).font(.subheadline).foregroundStyle(.primary.opacity(0.85))
             .fixedSize(horizontal: false, vertical: true)
         }
       }.frame(maxWidth: .infinity, alignment: .leading)
@@ -348,6 +410,11 @@ private struct NodeView: View {
 
   private var layoutHasSections: Bool {
     (node.type == .vstack || node.type == .hstack || node.type == .grid || node.type == .section) && node.children.contains { [.section, .metric, .chart, .progress, .iconList, .grid, .timeline].contains($0.type) || $0.children.contains { [.metric, .chart, .section].contains($0.type) } }
+  }
+
+  private var displayedText: String {
+    if !node.binding.isEmpty, case .text(let value) = state.values[node.binding] { return value }
+    return node.text
   }
 
   private var font: Font {

@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUIIntelligence
 import SwiftUIIntelligenceFoundationModels
+import SwiftUIIntelligenceExamples
 
 @main struct ModelProbe {
   @MainActor static func main() async {
@@ -12,6 +13,169 @@ import SwiftUIIntelligenceFoundationModels
       let availability = FoundationModelsDocumentProvider.availabilityDescription
       print(availability)
       try Data(availability.utf8).write(to: folder.appendingPathComponent("availability.txt"))
+      if args.contains("--calculation-control") {
+        let registry = try CalculationRegistry([
+          .init(id: "double", inputs: ["input": .number], outputs: ["output": .number]) { values in
+            guard case .number(let input) = values["input"] else { throw UIError("Invalid input.") }
+            return ["output": .number(input * 2)]
+          }
+        ])
+        let request = try DocumentGenerationRequest(messages: [.init(role: .user, content:
+          "Synthetic test. Declare two numeric state fields: sourceAmount has value 2, doubledAmount has value 0. Both have minimum 0, maximum 100, step 1. Bind double input to sourceAmount and output to doubledAmount. Show a text node saying Calculation control. No other content.")], calculationSignatures: registry.signatures, requirements: .init(components: [.text], stateCount: 2, stateKinds: [.number]))
+        let provider = FoundationModelsDocumentProvider(onTrace: { label, data in
+          try? data.write(to: folder.appendingPathComponent(label + ".json"))
+        })
+        let data = try await provider.generate(request, onPreviewEvent: { event in
+          switch event {
+          case .begin(let attemptID):
+            try? Data("begin \(attemptID)".utf8).write(to: folder.appendingPathComponent("preview-begin.txt"))
+          case .component(let frame):
+            try? frame.data.write(to: folder.appendingPathComponent("preview-\(frame.sequence).json"))
+          }
+        })
+        let document = try UIDocument.decode(data, registeredActions: [], registeredCalculations: registry.names)
+        let state = DocumentState()
+        try state.load(document, calculations: registry)
+        guard document.calculations.count == 1 else { throw UIError("Missing calculation in control response.") }
+        try data.write(to: folder.appendingPathComponent("document.json"))
+        guard let binding = document.calculations.first, let inputID = binding.inputs["input"],
+          let outputID = binding.outputs["output"], state.values[inputID] == .number(2),
+          state.values[outputID] == .number(4) else { throw UIError("The live control did not preserve input 2 and calculated output 4.") }
+        print("Live minimal calculated document preserves input 2 and calculates output 4.")
+        return
+      }
+      if let index = args.firstIndex(of: "--interactive-example"), args.indices.contains(index + 1) {
+        let name = args[index + 1]
+        let prompt: String
+        switch name {
+        case "equipment": prompt = ExampleRequests.equipment
+        case "meal": prompt = ExampleRequests.meal
+        case "bill": prompt = ExampleRequests.bill
+        default: throw UIError("Unknown synthetic example request.")
+        }
+        let registry = try ExampleCalculations.registry()
+        let example: ExampleAcceptance.Example = switch name {
+        case "equipment": .equipment
+        case "bill": .bill
+        default: .meal
+        }
+        let requirements: DocumentRequirements = switch example {
+        case .meal: .init(components: [.table, .timeline], controls: [.stepper, .datePicker], stateCount: 3, stateKinds: [.number, .date], projectedComponents: [.table, .timeline])
+        case .bill: .init(components: [.metric, .table], controls: [.stepper], projectedComponents: [.table])
+        case .equipment: .init(components: [.table, .chart], projectedComponents: [.table, .chart])
+        }
+        let request = try DocumentGenerationRequest(messages: [.init(role: .user, content: prompt)],
+          calculationSignatures: registry.signatures, requirements: requirements, sourceInputValidation: { try ExampleAcceptance.validateSourceInput(capability: $0, input: $1, collection: $2, example: example) }, sourceValidation: { try ExampleAcceptance.validateSource($0, example: example) }, declarationValidation: { try ExampleAcceptance.validate($0, example: example) }, semanticValidation: { document in
+            if example == .equipment {
+              guard let binding = document.calculations.first else { throw UIError("Missing equipment binding.") }
+              var nodes: [UINode] = []
+              func visit(_ node: UINode) { nodes.append(node); node.children.forEach(visit) }
+              visit(document.root)
+              let hasChart = nodes.contains { $0.type == .chart && ($0.recordSource == binding.recordOutputs["measurements"] || $0.recordSource == binding.recordInputs["measurements"]) }
+              let hasTable = nodes.contains { $0.type == .table }
+              guard hasChart && hasTable else {
+                throw UIError("Equipment layout requires a measurement comparison chart and at least one comparison table.")
+              }
+              return
+            }
+            if example == .bill {
+              return
+            }
+            guard let binding = document.calculations.first else { throw UIError("Missing meal binding.") }
+            var nodes: [UINode] = []
+            func visit(_ node: UINode) { nodes.append(node); node.children.forEach(visit) }
+            visit(document.root)
+            var missing: [String] = []
+            if !nodes.contains(where: { $0.type == .control && $0.binding == binding.inputs["people"] }) {
+              missing.append("a numeric control bound to \(binding.inputs["people"] ?? "the people input")")
+            }
+            if !nodes.contains(where: { $0.type == .control && $0.binding == binding.inputs["mealTime"] && $0.controlType == .datePicker }) {
+              missing.append("a datePicker bound to \(binding.inputs["mealTime"] ?? "the mealTime input")")
+            }
+            if !nodes.contains(where: { $0.type == .table && $0.recordSource == binding.recordOutputs["shopping"] && Set($0.recordFields).isSuperset(of: ["name", "quantity", "unit"]) }) {
+              missing.append("a projected table from \(binding.recordOutputs["shopping"] ?? "shopping") with name, quantity, unit fields")
+            }
+            if !nodes.contains(where: { $0.type == .timeline && $0.recordSource == binding.recordOutputs["schedule"] && $0.recordFields == ["start", "title", "end"] }) {
+              missing.append("a projected timeline from \(binding.recordOutputs["schedule"] ?? "schedule") with fields ordered start, title, end")
+            }
+            guard missing.isEmpty else { throw UIError("Missing meal interactions: " + missing.joined(separator: "; ")) }
+          })
+        try request.schemaJSON.write(to: folder.appendingPathComponent("request-schema.json"))
+        try request.conversationJSON().write(to: folder.appendingPathComponent("request.json"))
+        let provider = FoundationModelsDocumentProvider(onTrace: { label, data in
+          try? data.write(to: folder.appendingPathComponent(label + ".json"))
+        })
+        let data = try await provider.generate(request)
+        let document = try UIDocument.decode(data, registeredActions: [], registeredCalculations: registry.names)
+        let state = DocumentState()
+        try state.load(document, calculations: registry, preservingEdits: false)
+        guard !document.calculations.isEmpty else { throw UIError("The model omitted required interactive calculations.") }
+        try DocumentGenerationContract.canonicalJSON(document).write(to: folder.appendingPathComponent("document.json"))
+        try ExampleAcceptance.validate(document, example: example)
+        if name == "meal" { try ExampleInteractionAcceptance.validateMeal(document, registry: registry) }
+        if name == "bill" { try BillInteractionAcceptance.validate(document, registry: registry) }
+        if name == "equipment" { try EquipmentInteractionAcceptance.validate(document, registry: registry) }
+        try JSONEncoder().encode(state.values).write(to: folder.appendingPathComponent("state.json"))
+        try JSONEncoder().encode(state.records).write(to: folder.appendingPathComponent("records.json"))
+        print("Live Apple document passes structure, calculation, and source-fact checks. The selected interaction contract passes; native UI acceptance remains separate.")
+        return
+      }
+      if let genIdx = args.firstIndex(of: "--generalization") {
+        let target = args.indices.contains(genIdx + 1) ? args[genIdx + 1] : "meal"
+        let registry = try ExampleCalculations.registry()
+        let prompt: String
+        let requirements: DocumentRequirements
+        switch target {
+        case "equipment":
+          prompt = """
+          Compare these supplied camping lanterns. Beacon costs 45 USD and outputs 500 lumens. Sol costs 65 USD and outputs 800 lumens.
+          Generate an editable comparison with a maximum price of 70 USD and maximum lumens of 1000.
+          Show price and lumens comparisons and charts. Let me change conditions and select each product.
+          Keep the filtered results and selection consistent. Use registered compare-records with products, measurements, and conditions records.
+          Preserve price in USD and lumens in lumens. Do not invent products or measurements.
+          """
+          requirements = DocumentRequirements(components: [.table, .chart], projectedComponents: [.table, .chart])
+        case "bill":
+          prompt = """
+          Split this synthetic bill in one currency using integer minor units. Participants are Leo, Mia, Noah, and Olivia.
+          Pizza costs 1400 minor units and Leo and Mia share it (Noah and Olivia are excluded).
+          Pasta costs 800 minor units and Mia, Noah, and Olivia share it (Leo is excluded).
+          The fixed service fee is 220 minor units. Show editable item amounts, participation toggles for each item/person pair, and service fee.
+          Show personal food, service fee, and final total plus the exact payable total. Updates must happen locally after edits.
+          Use registered split-bill. Retain a complete assignment matrix including excluded participants.
+          Never label minor units as major currency amounts. Do not invent people or charges.
+          """
+          requirements = DocumentRequirements(components: [.metric, .table], controls: [.stepper], projectedComponents: [.table])
+        default:
+          prompt = """
+          Plan a meal from this recipe for 4 people: quinoa 250 g, spinach 120 g, tofu 180 g.
+          The supplied sequential steps are washing for 5 minutes, boiling for 20 minutes, and plating for 5 minutes.
+          The original recipe serves 4 people. The requested plan serves 8 people.
+          Keep the original count fixed. Allow changes to the requested people count and meal time 2026-12-25T20:00:00Z.
+          Show a shopping list and timeline that update together. Keep original recipe quantities as the scale basis.
+          Use registered meal-plan with the supplied ingredients and ordered steps.
+          """
+          requirements = DocumentRequirements(components: [.table, .timeline], controls: [.stepper, .datePicker], stateCount: 3, stateKinds: [.number, .date], projectedComponents: [.table, .timeline])
+        }
+        let request = try DocumentGenerationRequest(
+          messages: [.init(role: .user, content: prompt)],
+          calculationSignatures: registry.signatures,
+          requirements: requirements
+        )
+        let provider = FoundationModelsDocumentProvider(onTrace: { label, data in
+          try? data.write(to: folder.appendingPathComponent(label + ".json"))
+        })
+        let data = try await provider.generate(request)
+        let document = try UIDocument.decode(data, registeredActions: [], registeredCalculations: registry.names)
+        let state = DocumentState()
+        try state.load(document, calculations: registry, preservingEdits: false)
+        guard !document.calculations.isEmpty else { throw UIError("The model omitted required interactive calculations.") }
+        try DocumentGenerationContract.canonicalJSON(document).write(to: folder.appendingPathComponent("document.json"))
+        try JSONEncoder().encode(state.values).write(to: folder.appendingPathComponent("state.json"))
+        try JSONEncoder().encode(state.records).write(to: folder.appendingPathComponent("records.json"))
+        print("Live Apple unseen generalization document for \(target) generated, validated, and loaded successfully.")
+        return
+      }
       if args.contains("--scenarios") { try await scenarioProbe(folder, filter: args.last == "--scenarios" ? nil : args.last); return }
       if let flag = args.firstIndex(of: "--prompt-file"), args.indices.contains(flag + 1) {
         try await promptProbe(folder, promptURL: URL(fileURLWithPath: args[flag + 1]))
