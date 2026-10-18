@@ -112,7 +112,11 @@ await chat.send("添加一节，描述待完成的导出验证。")
 - `reset()` 清空历史，并丢弃迟到结果。
 - `cancel()` 取消所属 Task，并使迟到结果失效。
 - `timeout` 默认 300 秒。用 `timeout: nil` 关闭。超时使迟到结果失效，但无法终止忽略取消的 provider。
-- `StreamingDocumentGenerationProvider` 提供累积快照。会话报告快照数量和大小，并且只提交最终通过校验的文档。
+- `StreamingDocumentGenerationProvider` 提供累积快照，只用于进度；不要直接渲染这些字节。
+- `ProgressiveDocumentGenerationProvider` 提供独立、需要等待完成的 `onPreviewEvent` 通道：先开始新尝试，再按递增顺序发送完整组件文档。
+  会话校验声明、引用和计算结果后才暴露 `previewComponents`。每次请求最多 32 个尝试、32 个进入校验的帧和 64 KiB；被拒绝的已进入校验帧也消耗预算。
+  `DocumentPreviewView` 使用隔离状态和拒绝执行的动作，禁用控件与导航，保留滚动。预览组件列表不是最终容器树，不更新历史或版本。
+  取消、超时、失败和最终接受均清除预览；旧回调不能恢复预览。
 
 每份文档保留一个 `DocumentState`。`load(document, preservingEdits: false)` 重置默认值。
 本地编辑不进入 prompt，也不进入 trace 日志。副作用、敏感数据、权限检查和幂等性由宿主负责。
@@ -280,6 +284,46 @@ SWIFTUIINTELLIGENCE_API_KEY=<key> swift run --disable-sandbox SwiftUIIntelligenc
 
 `evidence/` 目录约 4 GB，只保留在本机，不在私有仓库中，因此上述证据路径只在本地工作区存在。
 本轮结果见 `evidence/expanded-final/VALIDATION.md`。
+
+## 响应式示例接入
+
+示例模块 `SwiftUIIntelligenceExamples` 注册通用比较、备餐和精确分账计算；核心 SDK 不包含场景页面。
+参见 `Example/SharedInteractions/README.md`，了解签名、启动方式和当前限制。
+源记录、可编辑表格，以及文本、图表、列表、表格和时间线绑定使用同一套校验后的状态协议。
+只有计算和显示约束全部通过，编辑结果才会提交。
+计算签名可用 `recordReferences` 声明输入集合之间的引用。字段值仍是字符串，但执行宿主回调前必须对应目标集合的实际行 ID。
+原生生成先编写目标集合，再生成引用；库不按显示名称推断关联，也不补写值。
+可选的 `inputNumberConstraints` 声明宿主授权的数值输入域，例如：
+```swift
+inputNumberConstraints: ["count": .init(minimum: 1, maximum: 10_000, integer: true, step: 1)]
+```
+键必须对应数值标量输入。范围必须有限、有序，并处于状态模型的数值范围内；模型声明可使用更窄范围。
+整数域在宿主回调前拒绝小数，失败编辑保留旧状态。可选 step 约束声明元数据，不定义运行时步长格点。
+省略字典保持旧行为，不提供源值、ID 或默认值。
+
+可选的 `recordInputDescriptions` 为原生集合生成提供宿主编写的参数用途说明。
+键必须对应已声明的输入，说明不得为空，且每项最多 500 个 Unicode 标量。
+provider 原样传递说明，不把它们解释为页面模板或计算映射。
+`DocumentGenerationRequest` 与 `DocumentChatSession` 可选的 `sourceInputValidation` 回调接收能力 ID、输入参数名和集合。
+原生引用阶段在集合成为依赖目标前调用它；最终验收会再次检查已绑定的源输入，其他 provider 也不能绕过该检查。
+回调可能重复运行，必须是无副作用的纯验证。跨输入规则仍需完整源数据和最终验证；库不修复被拒绝的集合。
+没有记录引用时，回调在绑定完成后、布局生成前运行，并非早于所有模型调用。
+省略回调会保留仅注册能力 ID、没有签名元数据的旧请求；显式启用时必须提供匹配的签名。
+`GeneratedDocumentView(provider:...)` 与 `OnDeviceGeneratedView` 都可传入 requirements 和全部分阶段验证回调。
+需要在错误源数据进入依赖生成前拒绝时，应配置这些选项，而不是只依赖最终验证。
+宿主显式选择不同验收策略时，可调用 `session.send(text, validation: policy)`，传入不可变的 `DocumentValidationPolicy`。
+它仅为该请求替换会话基线要求与回调；重试保留同一策略。普通 `send(text)` 仍使用会话基线。
+其中 `finalValidation` 在文档和计算检查后、提交前于主线程执行，可用于宿主交互验收；它不传给 provider，也不用于临时预览。
+`DocumentChatSession.originalSources` 独立于模型消息及生成结果，按顺序精确保留有效提交的原文。
+生成失败保留该段，重试不重复追加，无效或被忽略的发送不追加，reset 清空原文。
+每次原始提交包括空白在内最多 48,000 UTF-8 字节；历史最多保留 24 段、合计 1,152,000 UTF-8 字节，直到 reset 清空。超限发送在调用 provider 前拒绝，不静默截断已接受原文。
+公开输入视图提供可选择的原文、显式来源／版本／完整可复制 JSON 的 Details，以及 New chat；宽屏在结果旁保留原文。
+
+端到端验收尚未完成。最小 Apple 数值计算已保留输入 2 并计算输出 4；完整备餐仍超出上下文。
+结构测试和合成原生交互不代表实时模型的完整性或泛化能力。
+独立的已校验只读组件预览已接通，不能与累积 JSON 快照混用。
+合成 iPhone／iPad 测试验证了交互禁用、多组件滚动、取消／失败后的旧状态保留，以及仅最终接受后启用交互；最小真实 Apple 请求已发出预览事件。
+渐进机制已通过文档所述的合成原生测试和最小实时范围验收。三个完整实时示例和未预设输入泛化仍未完成。
 
 ## 不支持的范围
 

@@ -12,10 +12,10 @@ Previous weather visual design and all source were preserved in `evidence/chat-b
 
 ## Original source cards
 
-The demo document page preserves submitted user text independently of model output.
+The session preserves submitted user text independently of model output. The demo and public composer expose that source separately from generated results.
 An original source card retains exact characters and supports text selection.
 The original text renders in full without a preview line limit or an expansion control.
-Phones scroll the original source and generated content together.
+Phones show generated content first and open complete original text in a separate sheet.
 Content has horizontal insets inside the scroll view, in addition to the page insets.
 The document column shows generated results first. Phones open complete original text in a sheet. Wide iPads select Chat or Original text in the left column.
 Follow-up messages remain in source order. New chat clears the source cards.
@@ -24,7 +24,7 @@ Follow-up messages remain in source order. New chat clears the source cards.
 
 Layout containers do not add an enclosing surface. Content groups and leaf content retain reading cards.
 Scroll views own their viewport boundary; preview wrappers do not add a second clip.
-The chat header shows the app name, Details, and New chat.
+The demo chat header shows the app name, Details, and New chat. The public composer exposes Original, Details, and New chat without creating another navigation root.
 Details holds model provenance, document revision, JSON inspection, and JSON copying.
 
 ## Card material requirement

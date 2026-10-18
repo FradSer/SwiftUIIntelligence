@@ -124,7 +124,14 @@ kind: `input`, `provider`, or `invalidDocument`.
 - `timeout` defaults to 300 seconds. Use `timeout: nil` to disable it. A timeout invalidates a late
   result, but it cannot stop a provider that ignores cancellation.
 - `StreamingDocumentGenerationProvider` supplies cumulative snapshots. The session reports the
-  snapshot count and size, and commits only the final validated document.
+  snapshot count and size, and commits only the final validated document. Do not render these bytes.
+- `ProgressiveDocumentGenerationProvider` adds a separate awaited `onPreviewEvent` channel.
+  Begin each layout attempt with a fresh ID, then send complete component documents in increasing sequence.
+  The session validates declarations, references, and calculated presentation before exposing `previewComponents`.
+  Request-wide validation budgets are 32 attempts, 32 admitted frames, and 64 KiB; rejected admitted frames consume the frame/byte budget.
+  `DocumentPreviewView` uses isolated state and inert actions. It disables controls and navigation while keeping scrolling available.
+  Previews are provisional component lists, not the final authored container tree. They do not change document history or revision.
+  Cancellation, timeout, failure, and final acceptance clear previews; late events cannot restore them.
 
 Keep one `DocumentState` per document. `load(document, preservingEdits: false)` resets the defaults.
 Local edits do not enter the prompt or the trace log. The host owns side effects, sensitive data,
@@ -311,6 +318,54 @@ scheme, host, and model it used.
 The `evidence/` directory is about 4 GB and stays on this Mac. It is not in the private repository,
 so the evidence paths exist only in the local workspace. See
 `evidence/expanded-final/VALIDATION.md` for the current round.
+
+## Reactive example integration
+
+The example-only SwiftUIIntelligenceExamples product registers comparison, meal-planning, and exact bill-allocation capabilities.
+The core SDK remains business-neutral. Read @Example/SharedInteractions/README.md for signatures, launch mode, and current limitations.
+Source records, editable table cells, and derived text/chart/list/table/timeline bindings use the same validated state protocol.
+The runtime commits an edit only after calculation and presentation validation succeed.
+Calculation signatures can declare `recordReferences` between input collections. Reference fields remain strings,
+but must identify actual target rows before the host callback runs. Native generation authors targets first;
+it does not infer links from display names or insert missing values.
+Optional `inputNumberConstraints` declares host-authorized numeric input domains:
+```swift
+inputNumberConstraints: ["count": .init(minimum: 1, maximum: 10_000, integer: true, step: 1)]
+```
+Keys must name numeric scalar inputs. Bounds must be finite, ordered, and within the state envelope.
+Authored ranges may be narrower. Integer domains reject fractional values before the host callback runs;
+failed edits retain prior state. Optional step constrains declaration metadata, not a runtime step lattice.
+Omitting the dictionary preserves existing behavior. Constraints supply no source values, IDs, or defaults.
+
+Optional `recordInputDescriptions` supplies host-authored parameter meanings for native collection generation.
+Descriptions must name declared inputs, contain nonblank text, and use at most 500 Unicode scalars each.
+The provider passes them unchanged; they do not define page templates or calculation maps.
+Optional `sourceInputValidation` on `DocumentGenerationRequest` and `DocumentChatSession` receives
+(capability ID, input parameter, collection). Use a pure callback to reject source facts before a native
+reference-stage collection becomes a dependency target. Final acceptance checks bound source inputs again,
+including for other providers. The callback can run more than once; it must not perform side effects.
+Keep full-source and final validation for cross-input rules. No rejected collection is repaired.
+Without record references, this callback runs after bindings and before layout, not before every model call.
+Omitting it preserves identifier-only legacy requests without signature metadata. Opting in requires matching signatures.
+Both `GeneratedDocumentView(provider:...)` and `OnDeviceGeneratedView` expose requirements and all staged validation callbacks.
+Use these options rather than relying on a final-only callback when incorrect source data must stop dependent generation.
+For explicit host selections, pass an immutable `DocumentValidationPolicy` to `session.send(text, validation: policy)`.
+It replaces the session's baseline requirements and callbacks for that request only; retry preserves the same policy.
+`DocumentChatSession.originalSources` retains accepted raw submissions exactly and in order, independently of trimmed model messages or generated output.
+Failed generation retains the submitted passage; retry does not append another copy. Invalid or ignored sends do not append, and reset clears the archive.
+Each raw submission is limited to 48,000 UTF-8 bytes, including whitespace. The archive retains at most 24 passages and 1,152,000 UTF-8 bytes until reset. Excess sends reject before provider work; accepted passages are never silently truncated.
+The public composer exposes selectable Original text, Details with explicit provider provenance, revision and complete copyable JSON, and New chat. Wide layouts keep original passages beside results.
+
+Its `finalValidation` runs on the main actor after document and calculation checks, before commit. Use it for host interaction acceptance.
+It does not run on provisional previews or travel to the provider. Plain `send(text)` retains the session baseline.
+
+This integration is not accepted end to end yet. A live meal document passes source and calculation checks but lacks required interactive views.
+Other full live attempts still fail. The latest minimal scalar control preserves input 2 and evaluates output 4.
+Schema tests and synthetic native interactions do not establish model completeness or generalization.
+Validated read-only component previews are supported separately from cumulative snapshots.
+Synthetic phone/iPad tests verify inert interactions, multi-component scrolling, cancellation and failure retention, and final-only interaction enabling. A minimal live Apple request emits preview events.
+The documented progressive machinery matrix has passed within its synthetic/native and minimal live scope.
+Complete live examples and unseen-input generalization remain unverified.
 
 ## Not supported
 

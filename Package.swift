@@ -6,15 +6,18 @@ let package = Package(
   platforms: [.iOS(.v26), .macOS(.v26)],
   products: [
     .library(name: "SwiftUIIntelligence", targets: ["SwiftUIIntelligence"]),
+    .library(name: "SwiftUIIntelligenceExamples", targets: ["SwiftUIIntelligenceExamples"]),
     .library(name: "SwiftUIIntelligenceWeatherDemo", targets: ["SwiftUIIntelligenceWeatherDemo"]),
     .library(name: "SwiftUIIntelligenceFoundationModels", targets: ["SwiftUIIntelligenceFoundationModels"]),
     .executable(name: "SwiftUIIntelligenceModelProbe", targets: ["SwiftUIIntelligenceModelProbe"]),
   ],
   targets: [
     .target(name: "SwiftUIIntelligence"),
+    .target(name: "InteractionFixtureSupport", path: "Example/TestFixtures"),
+    .target(name: "SwiftUIIntelligenceExamples", dependencies: ["SwiftUIIntelligence"], path: "Example/SharedInteractions", exclude: ["README.md"]),
     .target(name: "SwiftUIIntelligenceFoundationModels", dependencies: ["SwiftUIIntelligence"]),
-    .executableTarget(name: "SwiftUIIntelligenceModelProbe", dependencies: ["SwiftUIIntelligence", "SwiftUIIntelligenceFoundationModels"]),
+    .executableTarget(name: "SwiftUIIntelligenceModelProbe", dependencies: ["SwiftUIIntelligence", "SwiftUIIntelligenceFoundationModels", "SwiftUIIntelligenceExamples"]),
     .target(name: "SwiftUIIntelligenceWeatherDemo", dependencies: ["SwiftUIIntelligence"]),
-    .testTarget(name: "SwiftUIIntelligenceTests", dependencies: ["SwiftUIIntelligence", "SwiftUIIntelligenceWeatherDemo", "SwiftUIIntelligenceFoundationModels"], path: "tests/SwiftUIIntelligenceTests"),
+    .testTarget(name: "SwiftUIIntelligenceTests", dependencies: ["SwiftUIIntelligence", "SwiftUIIntelligenceWeatherDemo", "SwiftUIIntelligenceFoundationModels", "SwiftUIIntelligenceExamples", "InteractionFixtureSupport"], path: "tests/SwiftUIIntelligenceTests"),
   ]
 )
