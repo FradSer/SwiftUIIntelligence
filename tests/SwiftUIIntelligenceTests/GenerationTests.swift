@@ -3,6 +3,58 @@ import FoundationModels
 import SwiftUIIntelligenceFoundationModels
 import Testing
 
+@Test @MainActor func sessionValidatesFactsIndependentlyOfProvider() async {
+  let provider = ChatResponseProvider { _ in
+    #"{"version":1,"root":{"id":"root","type":"text","text":"Changed"}}"#
+  }
+  let sessions = [
+    DocumentChatSession(provider: provider, sourceValidation: { _ in throw UIError("Source rejected.") }),
+    DocumentChatSession(provider: provider, declarationValidation: { _ in throw UIError("Declarations rejected.") }),
+  ]
+  for session in sessions {
+    await session.send("Preserve source.")
+    #expect(session.phase == .failed)
+    #expect(session.failureKind == .invalidDocument)
+    #expect(session.document == nil && session.revision == 0)
+  }
+}
+
+@Test func sourceStageChecksHostStateConstraintsBeforeLayoutRequirements() throws {
+  let document = try UIDocument.decode(Data(#"{"version":1,"state":[{"id":"a","kind":"number","value":2}],"root":{"id":"root","type":"text","text":"Validation"}}"#.utf8), registeredActions: [])
+  for requirements in [DocumentRequirements(components: [.chart], stateCount: 2), DocumentRequirements(stateKinds: [.date])] {
+    let request = try DocumentGenerationRequest(messages: [.init(role: .user, content: "State constraints")], requirements: requirements)
+    #expect(throws: UIError.self) { try request.validateSource(document) }
+  }
+  let request = try DocumentGenerationRequest(messages: [.init(role: .user, content: "Layout comes later")], requirements: .init(components: [.chart], stateCount: 1, stateKinds: [.number]))
+  try request.validateSource(document)
+}
+
+@Test func sourceValidationRunsBeforeBindingsExist() throws {
+  let request = try DocumentGenerationRequest(messages: [.init(role: .user, content: "Two source numbers")], sourceValidation: { document in
+    let numbers = document.state.compactMap { field -> Double? in
+      if case .number(let value) = field.value { return value }; return nil
+    }
+    guard numbers.contains(2) && numbers.contains(3) else { throw UIError("Source counts are incomplete.") }
+  })
+  let incomplete = try UIDocument.decode(Data(#"{"version":1,"state":[{"id":"people","kind":"number","value":3}],"root":{"id":"root","type":"text","text":"Validation"}}"#.utf8), registeredActions: [])
+  #expect(throws: UIError.self) { try request.validateSource(incomplete) }
+}
+
+@Test func declarationValidationDoesNotRequireTheFinalLayout() throws {
+  let request = try DocumentGenerationRequest(messages: [.init(role: .user, content: "Source facts")],
+    requirements: .init(components: [.chart]), declarationValidation: { document in
+      guard document.state.contains(where: { $0.id == "source" && $0.value == .number(2) }) else {
+        throw UIError("The source fact changed.")
+      }
+    })
+  let valid = try UIDocument.decode(Data(#"{"version":1,"state":[{"id":"source","kind":"number","value":2}],"root":{"id":"validation","type":"text","text":"Validation"}}"#.utf8), registeredActions: [])
+  try request.validateDeclarations(valid)
+  #expect(throws: UIError.self) { try request.validateSemantics(valid) }
+  let invalid = try UIDocument.decode(Data(#"{"version":1,"root":{"id":"validation","type":"text","text":"Validation"}}"#.utf8), registeredActions: [])
+  #expect(throws: UIError.self) { try request.validateDeclarations(invalid) }
+}
+
+
 @testable import SwiftUIIntelligence
 
 private let planJSON =
