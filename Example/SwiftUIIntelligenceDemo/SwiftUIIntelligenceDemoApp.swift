@@ -1,5 +1,6 @@
 @_spi(Testing) import SwiftUIIntelligence
 import SwiftUIIntelligenceFoundationModels
+import SwiftUIIntelligenceExamples
 import SwiftUIIntelligenceWeatherDemo
 import Observation
 import SwiftUI
@@ -9,7 +10,23 @@ import UIKit
   var body: some Scene {
     WindowGroup {
       Group {
-        if ProcessInfo.processInfo.arguments.contains("--expanded-case") {
+        if ProcessInfo.processInfo.arguments.contains("--progressive-preview-failure") {
+          ProgressivePreviewScreen(allowsCompletion: true, failsCompletion: true)
+        } else if ProcessInfo.processInfo.arguments.contains("--progressive-preview-final") {
+          ProgressivePreviewScreen(allowsCompletion: true)
+        } else if ProcessInfo.processInfo.arguments.contains("--progressive-preview") {
+          ProgressivePreviewScreen()
+        } else if ProcessInfo.processInfo.arguments.contains("--public-wrapper-fixture") {
+          NavigationStack {
+            GeneratedDocumentView(provider: PublicWrapperFixtureProvider())
+          }
+        } else if ProcessInfo.processInfo.arguments.contains("--wrapper-registry") {
+          WrapperRegistryScreen()
+        } else if ProcessInfo.processInfo.arguments.contains("--record-editing") {
+          RecordEditingScreen()
+        } else if ProcessInfo.processInfo.arguments.contains("--calculation-lifecycle") {
+          CalculationLifecycleScreen()
+        } else if ProcessInfo.processInfo.arguments.contains("--expanded-case") {
           ExpandedScenarioScreen()
         } else if ProcessInfo.processInfo.arguments.contains("--sdk-demo") {
           SDKDemoScreen()
@@ -34,6 +51,284 @@ import UIKit
       return nil
     }
     return args[index + 1] == "light" ? .light : .dark
+  }
+}
+
+/// Synthetic responses for the public wrapper's source/metadata regression only.
+private actor PublicWrapperFixtureProvider: DocumentGenerationProvider {
+  private var count = 0
+  func generate(_ request: DocumentGenerationRequest) async throws -> Data {
+    count += 1
+    if count == 2 { throw UIError("Synthetic wrapper failure") }
+    return Data(#"{"version":1,"root":{"id":"wrapper-result","type":"text","text":"Synthetic public wrapper result"}}"#.utf8)
+  }
+}
+
+/// Synthetic native harness. This route never calls a model or an external service.
+private struct ProgressivePreviewScreen: View {
+  @State private var provider: SyntheticProgressivePreviewProvider
+  @State private var session: DocumentChatSession
+  @State private var state = DocumentState()
+  @State private var actionCount = 0
+  @State private var hostError: String?
+  private let allowsCompletion: Bool
+
+  init(allowsCompletion: Bool = false, failsCompletion: Bool = false) {
+    let provider = SyntheticProgressivePreviewProvider(allowsCompletion: allowsCompletion, failsCompletion: failsCompletion)
+    _provider = State(initialValue: provider)
+    _session = State(initialValue: DocumentChatSession(
+      provider: provider, registeredActions: ["submit"]))
+    self.allowsCompletion = allowsCompletion
+  }
+
+  var body: some View {
+    VStack(spacing: 12) {
+      Text("Synthetic progressive preview")
+      Text("Host actions: \(actionCount)")
+      Text("Host state: \(hostInput)")
+      if let hostError { Text(hostError) }
+      HStack {
+        Button("Edit accepted") {
+          do { try state.set("input", to: .number(3)) }
+          catch { hostError = error.localizedDescription }
+        }.disabled(session.phase != .ready)
+        Button("Begin preview") {
+          Task { await session.send("Show a synthetic read-only preview") }
+        }.disabled(session.phase != .ready)
+      }
+      if allowsCompletion && session.phase == .generating && session.preview != nil {
+        Button("Complete generation") {
+          Task { await provider.finish() }
+        }
+      }
+      GeneratedDocumentView(session: session, actions: ActionRegistry([
+        "submit": {
+          actionCount += 1
+          return "Host action dispatched"
+        }
+      ]), state: state)
+    }
+    .padding()
+    .task { await session.send("Load the synthetic accepted document") }
+    .onDisappear { session.cancel() }
+  }
+
+  private var hostInput: String {
+    guard case .number(let input) = state.values["input"] else { return "unloaded" }
+    return String(Int(input))
+  }
+}
+
+private actor SyntheticProgressivePreviewProvider: ProgressiveDocumentGenerationProvider {
+  private var requestCount = 0
+  private let allowsCompletion: Bool
+  private let failsCompletion: Bool
+  private struct Attempt {
+    let id: UUID
+    var completion: CheckedContinuation<Void, Error>?
+    var finished = false
+    var cancelled = false
+  }
+  private var currentAttempt: Attempt?
+
+  init(allowsCompletion: Bool = false, failsCompletion: Bool = false) {
+    self.allowsCompletion = allowsCompletion
+    self.failsCompletion = failsCompletion
+  }
+
+  func finish() {
+    guard currentAttempt != nil else { return }
+    currentAttempt?.finished = true
+    let completion = currentAttempt?.completion
+    currentAttempt?.completion = nil
+    completion?.resume()
+  }
+
+  private func cancelCompletion(attemptID: UUID) {
+    guard currentAttempt?.id == attemptID else { return }
+    currentAttempt?.cancelled = true
+    let completion = currentAttempt?.completion
+    currentAttempt?.completion = nil
+    completion?.resume(throwing: CancellationError())
+  }
+
+  private static let final = #"{"version":1,"state":[{"id":"input","kind":"number","value":2}],"root":{"id":"final-root","type":"vstack","children":[{"id":"final-text","type":"text","text":"Final accepted"},{"id":"final-input","type":"control","title":"Final input","binding":"input","controlType":"stepper"},{"id":"final-submit","type":"button","title":"Submit final","action":"submit"}]}}"#
+  private static let accepted = #"{"version":1,"state":[{"id":"input","kind":"number","value":2}],"root":{"id":"accepted-root","type":"vstack","children":[{"id":"accepted-text","type":"text","text":"Prior accepted"},{"id":"accepted-input","type":"control","title":"Accepted input","binding":"input","controlType":"stepper"}]}}"#
+  private static let preview = #"{"version":1,"state":[{"id":"input","kind":"number","value":2}],"root":{"id":"preview-section","type":"section","title":"Synthetic preview component","children":[{"id":"preview-text","type":"text","text":"Preview visible"},{"id":"preview-input","type":"control","title":"Preview input","binding":"input","controlType":"stepper"},{"id":"preview-submit","type":"button","title":"Preview submit","action":"submit"}]}}"#
+
+  func generate(_ request: DocumentGenerationRequest) async throws -> Data {
+    try await generate(request, onPreviewEvent: { _ in })
+  }
+
+  func generate(_ request: DocumentGenerationRequest,
+    onPreviewEvent: @escaping @Sendable (DocumentPreviewEvent) async -> Void
+  ) async throws -> Data {
+    requestCount += 1
+    if requestCount == 1 { return Data(Self.accepted.utf8) }
+    let attemptID = UUID()
+    // Superseding an attempt must also release its pending completion gate.
+    let supersededCompletion = currentAttempt?.completion
+    currentAttempt = Attempt(id: attemptID)
+    supersededCompletion?.resume(throwing: CancellationError())
+    await onPreviewEvent(.begin(attemptID: attemptID))
+    await onPreviewEvent(.component(.init(attemptID: attemptID, sequence: 1,
+      data: Data(Self.preview.utf8))))
+    let second = #"{"version":1,"state":[{"id":"input","kind":"number","value":2}],"root":{"id":"second-preview","type":"text","text":"Second complete component"}}"#
+    await onPreviewEvent(.component(.init(attemptID: attemptID, sequence: 2, data: Data(second.utf8))))
+    if allowsCompletion {
+      try await withTaskCancellationHandler {
+        try Task.checkCancellation()
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+          guard let attempt = currentAttempt, attempt.id == attemptID else {
+            continuation.resume(throwing: CancellationError())
+            return
+          }
+          if attempt.cancelled { continuation.resume(throwing: CancellationError()) }
+          else if attempt.finished { continuation.resume() }
+          else { currentAttempt?.completion = continuation }
+        }
+        try Task.checkCancellation()
+      } onCancel: {
+        Task { await self.cancelCompletion(attemptID: attemptID) }
+      }
+      if failsCompletion { throw UIError("Synthetic generation failed.") }
+      return Data(Self.final.utf8)
+    }
+    // Keep the component provisional. Cancellation must never produce a final document.
+    try await Task.sleep(for: .seconds(60))
+    throw CancellationError()
+  }
+}
+
+/// Synthetic chat-only preview fixture. Never calls a model or external service.
+private actor ChatProgressiveFixtureProvider: ProgressiveDocumentGenerationProvider {
+  static let shared = ChatProgressiveFixtureProvider()
+  private var advanceRequested = false
+  private var activeAttempt: UUID?
+  private var continuation: CheckedContinuation<Void, Never>?
+  func advance() {
+    advanceRequested = true
+    continuation?.resume(); continuation = nil
+  }
+  private func releaseCancelledWait(attempt: UUID) {
+    guard activeAttempt == attempt else { return }
+    continuation?.resume(); continuation = nil
+  }
+  func generate(_ request: DocumentGenerationRequest) async throws -> Data {
+    try await generate(request, onPreviewEvent: { _ in })
+  }
+  func generate(_ request: DocumentGenerationRequest, onPreviewEvent: @escaping @Sendable (DocumentPreviewEvent) async -> Void) async throws -> Data {
+    let attempt = UUID()
+    continuation?.resume(); continuation = nil
+    activeAttempt = attempt
+    advanceRequested = false
+    let data = Data(#"{"version":1,"root":{"id":"chat-preview","type":"text","text":"Chat provisional component"}}"#.utf8)
+    await onPreviewEvent(.begin(attemptID: attempt))
+    await onPreviewEvent(.component(.init(attemptID: attempt, sequence: 1, data: data)))
+    try await withTaskCancellationHandler {
+      try Task.checkCancellation()
+      await withCheckedContinuation { continuation in
+        if advanceRequested || Task.isCancelled { continuation.resume() } else { self.continuation = continuation }
+      }
+      try Task.checkCancellation()
+    } onCancel: {
+      Task { await self.releaseCancelledWait(attempt: attempt) }
+    }
+    try Task.checkCancellation()
+    let retry = UUID()
+    await onPreviewEvent(.begin(attemptID: retry))
+    let next = Data(#"{"version":1,"root":{"id":"chat-retry","type":"text","text":"Retried provisional component"}}"#.utf8)
+    await onPreviewEvent(.component(.init(attemptID: retry, sequence: 1, data: next)))
+    try await Task.sleep(for: .seconds(60))
+    throw CancellationError()
+  }
+}
+
+private struct WrapperRegistryScreen: View {
+  @State private var registry = makeRegistry(multiplier: 2)
+  var body: some View {
+    VStack {
+      Text("Synthetic public wrapper lifecycle")
+      GeneratedDocumentView(provider: ChatResponseProvider { _ in
+        #"{"version":1,"state":[{"id":"input","kind":"number","value":2},{"id":"output","kind":"text","value":"Pending"}],"calculations":[{"id":"scale","capability":"scale","inputs":{"input":"input"},"outputs":{"output":"output"}}],"root":{"id":"root","type":"vstack","children":[{"id":"input-control","type":"control","title":"Input","binding":"input","controlType":"stepper"},{"id":"result","type":"text","text":"Pending","binding":"output"}]}}"#
+      }, calculations: registry)
+      Button("Replace parent registry") { registry = Self.makeRegistry(multiplier: 3) }
+    }
+  }
+  private static func makeRegistry(multiplier: Double) -> CalculationRegistry {
+    try! CalculationRegistry([
+      .init(id: "scale", inputs: ["input": .number], outputs: ["output": .text]) { values in
+        guard case .number(let input) = values["input"] else { throw UIError("Invalid input.") }
+        return ["output": .text("Session result: \(Int(input * multiplier))")]
+      }
+    ])
+  }
+}
+
+private struct RecordEditingScreen: View {
+  @State private var state = DocumentState()
+  @State private var registry = makeRegistry()
+  private static let json = #"{"version":1,"state":[{"id":"total","kind":"text","value":"Pending"},{"id":"numericTotal","kind":"number","value":0,"maximum":10000}],"records":[{"id":"items","schema":{"fields":{"name":"text","amount":"number","included":"boolean"}},"rows":[{"id":"tea","values":{"name":"Tea","amount":125,"included":true}}]}],"calculations":[{"id":"sum","capability":"sum","inputs":{},"outputs":{"total":"total","numeric":"numericTotal"},"recordInputs":{"items":"items"}}],"root":{"id":"root","type":"vstack","children":[{"id":"intro","type":"text","text":"Synthetic record editing test"},{"id":"items-table","type":"table","columns":["Item","Amount","Included"],"rows":[["Pending","Pending","Pending"]],"recordSource":"items","recordFields":["name","amount","included"],"editableFields":["amount","included"]},{"id":"total-output","type":"text","text":"Pending","binding":"total"},{"id":"total-metric","type":"metric","label":"Total minor units","value":"Pending","valueBinding":"numericTotal","detail":"Synthetic exact numeric result","icon":"money"}]}}"#
+  var body: some View {
+    SwiftUIIntelligenceView(data: Data(Self.json.utf8), actions: ActionRegistry([:]), state: state, calculations: registry)
+  }
+  private static func makeRegistry() -> CalculationRegistry {
+    try! CalculationRegistry([
+      .init(id: "sum", inputs: [:], outputs: ["total": .text, "numeric": .number],
+        recordInputs: ["items": .init(fields: ["name": .text, "amount": .number, "included": .boolean])], recordOutputs: [:]) { _, records in
+        var total = 0.0
+        for row in records["items"]! {
+          guard case .number(let amount) = row.values["amount"], amount >= 0,
+            case .boolean(let included) = row.values["included"] else { throw UIError("Amount must be nonnegative.") }
+          if included { total += amount }
+        }
+        return CalculationResult(values: ["total": .text("Total: \(Int(total))"), "numeric": .number(total)])
+      }
+    ])
+  }
+}
+
+/// Synthetic host used only to verify registry and state replacement.
+private struct CalculationLifecycleScreen: View {
+  @State private var state = DocumentState()
+  @State private var registry = makeRegistry(multiplier: 2)
+  @State private var invalidReplacement = false
+  private static let documentJSON = #"{"version":1,"state":[{"id":"people","kind":"number","value":2},{"id":"quantity","kind":"text","value":"Pending"},{"id":"chartAmount","kind":"number","value":1}],"calculations":[{"id":"scale","capability":"scale","inputs":{"people":"people"},"outputs":{"quantity":"quantity","amount":"chartAmount"},"recordOutputs":{"items":"items","events":"events"}}],"root":{"id":"root","type":"vstack","children":[{"id":"input","type":"control","title":"People","binding":"people","controlType":"stepper"},{"id":"output","type":"text","text":"Pending","binding":"quantity"},{"id":"reactive-chart","type":"chart","title":"Calculated amount","chartStyle":"donut","points":[{"label":"Amount","series":"Total","value":1,"binding":"chartAmount"}]},{"id":"reactive-timeline","type":"timeline","title":"Calculated timeline","events":[{"time":"18:30","title":"Prepare portions","detail":"Pending"}],"recordSource":"events","recordFields":["time","title","detail"]},{"id":"items-table","type":"table","columns":["Item","Amount"],"rows":[["Pending","Pending"]],"recordSource":"items","recordFields":["name","amount"]},{"id":"items-list","type":"list","items":["Pending"],"recordSource":"items","recordFields":["name"]},{"id":"record-chart","type":"chart","title":"Filtered comparison","chartStyle":"bar","points":[{"label":"Pending","value":1,"series":"Price"}],"recordSource":"items","recordFields":["name","amount","name"]}]}}"#
+  var body: some View {
+    VStack {
+      Text("Synthetic calculation lifecycle test")
+      SwiftUIIntelligenceView(data: Data((invalidReplacement ? Self.documentJSON.replacingOccurrences(of: "\"chartStyle\":\"donut\"", with: "\"chartStyle\":\"radar\"").replacingOccurrences(of: "\"points\":[", with: "\"points\":[{\"label\":\"Second\",\"series\":\"Total\",\"value\":1},{\"label\":\"Third\",\"series\":\"Total\",\"value\":1},") : Self.documentJSON).utf8), actions: ActionRegistry([:]), state: state, calculations: registry)
+      Button("Replace registry") { registry = Self.makeRegistry(multiplier: 3) }
+      Button("Replace state") { state = DocumentState() }
+      Button("Empty chart") { registry = Self.makeEmptyRegistry() }
+      Button("Invalid replacement") {
+        registry = Self.makeRegistry(multiplier: 60)
+        invalidReplacement = true
+      }
+    }
+  }
+  private static func makeEmptyRegistry() -> CalculationRegistry {
+    try! CalculationRegistry([
+      .init(id: "scale", inputs: ["people": .number], outputs: ["quantity": .text, "amount": .number],
+        recordOutputs: ["items": .init(fields: ["name": .text, "amount": .number]),
+          "events": .init(fields: ["time": .text, "title": .text, "detail": .text])]) { _ in
+        CalculationResult(values: ["quantity": .text("Empty result"), "amount": .number(1)], records: ["items": [], "events": []])
+      }
+    ])
+  }
+
+  private static func makeRegistry(multiplier: Double) -> CalculationRegistry {
+    try! CalculationRegistry([
+      .init(id: "scale", inputs: ["people": .number], outputs: ["quantity": .text, "amount": .number],
+        recordOutputs: ["items": .init(fields: ["name": .text, "amount": .number]),
+          "events": .init(fields: ["time": .text, "title": .text, "detail": .text])]) { input in
+        guard case .number(let people) = input["people"] else { throw UIError("Invalid people value.") }
+        return CalculationResult(values: ["quantity": .text("Derived value: \(Int(people * multiplier))"), "amount": .number(people * multiplier)],
+          records: ["items": [.init(id: "sample", values: ["name": .text("Synthetic item"), "amount": .number(people * multiplier)])],
+            "events": [.init(id: "prepare", values: ["time": .text("18:30"), "title": .text("Prepare portions"),
+              "detail": .text("Derived value: \(Int(people * multiplier))")])]])
+      }
+    ])
   }
 }
 
@@ -369,12 +664,57 @@ private struct DemoBackdrop: View {
   }
 }
 
+/// Explicit host metadata. User text never selects an acceptance policy.
+private enum InteractiveExample: String, CaseIterable {
+  case equipment = "Equipment comparison"
+  case meal = "Meal plan"
+  case bill = "Split bill"
+
+  var prompt: String {
+    switch self {
+    case .equipment: ExampleRequests.equipment
+    case .meal: ExampleRequests.meal
+    case .bill: ExampleRequests.bill
+    }
+  }
+
+  @MainActor func policy(registry: CalculationRegistry) -> DocumentValidationPolicy {
+    let example: ExampleAcceptance.Example = switch self {
+    case .equipment: .equipment
+    case .meal: .meal
+    case .bill: .bill
+    }
+    let requirements: DocumentRequirements = switch self {
+    case .meal: .init(components: [.table, .timeline], controls: [.stepper, .datePicker], stateCount: 3, stateKinds: [.number, .date], projectedComponents: [.table, .timeline])
+    case .bill: .init(components: [.metric, .table], controls: [.stepper], projectedComponents: [.table])
+    case .equipment: .init(components: [.table, .chart], projectedComponents: [.table, .chart])
+    }
+    return DocumentValidationPolicy(requirements: requirements,
+      sourceInputValidation: { try ExampleAcceptance.validateSourceInput(capability: $0, input: $1, collection: $2, example: example) },
+      sourceValidation: { try ExampleAcceptance.validateSource($0, example: example) },
+      declarationValidation: { try ExampleAcceptance.validate($0, example: example) },
+      semanticValidation: { try ExampleAcceptance.validate($0, example: example) },
+      finalValidation: { document in
+        switch example {
+        case .meal: try ExampleInteractionAcceptance.validateMeal(document, registry: registry)
+        case .bill: try BillInteractionAcceptance.validate(document, registry: registry)
+        case .equipment: try EquipmentInteractionAcceptance.validate(document, registry: registry)
+        }
+      })
+  }
+}
+
 /// The product path is chat → provider → strict JSON → generic native document.
 private struct ChatScreen: View {
+  private let calculations: CalculationRegistry?
+  @State private var documentState = DocumentState()
   @State private var session: DocumentChatSession
   @State private var modeLabel: String
   @State private var input = ""
+  @State private var selectedExample: InteractiveExample?
   @State private var panel = "Chat"
+  @State private var syntheticPreviewAdvanced = false
+  @State private var selectedPreviewForRequest = false
   @State private var sourceShown = false
   @State private var jsonShown = false
   @State private var originalShown = false
@@ -387,7 +727,32 @@ private struct ChatScreen: View {
     let args = ProcessInfo.processInfo.arguments
     let provider: any DocumentGenerationProvider
     let label: String
-    if let index = args.firstIndex(of: "--chat-reference"), args.indices.contains(index + 1) {
+    let calculations = args.contains("--interactive-examples") ? try! ExampleCalculations.registry() : nil
+    self.calculations = calculations
+    #if DEBUG && targetEnvironment(simulator)
+    let fixtureArgument = args.firstIndex(of: "--chat-document-file")
+    if let index = fixtureArgument {
+      let path = args.indices.contains(index + 1) ? args[index + 1] : nil
+      provider = ChatDocumentFileProvider(path: path)
+      label = "Synthetic fixture · not AI generation"
+    } else {
+      (provider, label) = Self.defaultProvider(arguments: args)
+    }
+    #else
+    (provider, label) = Self.defaultProvider(arguments: args)
+    #endif
+    _session = State(
+      initialValue: DocumentChatSession(provider: provider, registeredActions: ["acknowledge"], calculations: calculations))
+    _modeLabel = State(initialValue: label)
+  }
+
+  private static func defaultProvider(arguments args: [String]) -> (any DocumentGenerationProvider, String) {
+    let provider: any DocumentGenerationProvider
+    let label: String
+    if args.contains("--chat-progressive-fixture") {
+      provider = ChatProgressiveFixtureProvider.shared
+      label = "Synthetic progressive provider · not AI generation"
+    } else if let index = args.firstIndex(of: "--chat-reference"), args.indices.contains(index + 1) {
       provider = ReferenceReadingProvider(scenario: args[index + 1])
       label = "Synthetic reference fixture · not AI generation"
     } else if args.contains("--chat-rich-output") {
@@ -403,9 +768,7 @@ private struct ChatScreen: View {
       provider = FoundationModelsDocumentProvider()
       label = "Apple on-device model · \(FoundationModelsDocumentProvider.availabilityDescription)"
     }
-    _session = State(
-      initialValue: DocumentChatSession(provider: provider, registeredActions: ["acknowledge"]))
-    _modeLabel = State(initialValue: label)
+    return (provider, label)
   }
 
   var body: some View {
@@ -413,6 +776,24 @@ private struct ChatScreen: View {
       let wide = geometry.size.width >= 900
       VStack(spacing: 8) {
         header
+        if calculations != nil {
+          HStack {
+            ForEach(InteractiveExample.allCases, id: \.self) { example in
+              Button(example.rawValue) {
+                selectedExample = example
+                input = example.prompt
+              }
+              .frame(minHeight: 44)
+              .accessibilityValue(selectedExample == example ? "Selected" : "")
+            }
+          }.font(.caption).disabled(session.phase == .generating)
+          Text(selectedExample.map { "Selected example acceptance: \($0.rawValue)" }
+            ?? "Choose an example to apply its acceptance checks.")
+            .font(.caption).foregroundStyle(.secondary)
+            .accessibilityIdentifier("example-acceptance")
+          Text("Synthetic source data · provider shown in Details")
+            .font(.caption).foregroundStyle(.secondary)
+        }
         if !wide {
           Group {
             HStack(spacing: 0) {
@@ -441,6 +822,15 @@ private struct ChatScreen: View {
           }
           .padding(14)
 
+        }
+        if ProcessInfo.processInfo.arguments.contains("--chat-progressive-fixture") {
+          Button("Advance synthetic preview") {
+            Task {
+              await ChatProgressiveFixtureProvider.shared.advance()
+              syntheticPreviewAdvanced = true
+            }
+          }
+          if syntheticPreviewAdvanced { Text("Synthetic preview attempt advanced") }
         }
         if session.phase == .failed { failure }
         if !hostResult.isEmpty {
@@ -473,6 +863,15 @@ private struct ChatScreen: View {
       
     }
     .onChange(of: session.revision) { _, _ in hostResult = "" }
+    .onChange(of: session.phase) { _, phase in
+      if phase == .generating { selectedPreviewForRequest = false }
+    }
+    .onChange(of: session.previewSequence) { _, sequence in
+      if !selectedPreviewForRequest && sequence != nil {
+        selectedPreviewForRequest = true
+        panel = "Document"
+      }
+    }
     .sheet(isPresented: $originalShown) {
       NavigationStack {
         ScrollView { GlassEffectContainer { originalSourceCard.padding(20) } }
@@ -527,6 +926,8 @@ private struct ChatScreen: View {
           .accessibilityLabel("Details").accessibilityIdentifier("chat-details")
         Button {
           session.reset()
+          selectedExample = nil
+          documentState = DocumentState()
           originalSources = []
           comparison = "Chat"
           originalShown = false
@@ -540,7 +941,7 @@ private struct ChatScreen: View {
       if modeLabel.contains("Unavailable") {
         Button("Try synthetic demo") {
           session = DocumentChatSession(
-            provider: SyntheticChatProvider(), registeredActions: ["acknowledge"])
+            provider: SyntheticChatProvider(), registeredActions: ["acknowledge"], calculations: calculations)
           modeLabel = "Synthetic provider · not AI generation"
         }.accessibilityIdentifier("chat-use-synthetic")
       }
@@ -614,6 +1015,12 @@ private struct ChatScreen: View {
       ScrollView {
         GlassEffectContainer {
         VStack(alignment: .leading, spacing: 20) {
+        if session.phase == .generating {
+          ForEach(Array(session.previewComponents.enumerated()), id: \.offset) { _, component in
+            DocumentPreviewView(document: component, calculations: session.calculationRegistry, embedded: true)
+              .id("\(session.previewAttemptID?.uuidString ?? ""):\(component.root.id)")
+          }
+        }
         if let document = session.document {
           SwiftUIIntelligenceView(
             document: document,
@@ -622,7 +1029,7 @@ private struct ChatScreen: View {
                 hostResult = "Host acknowledged the document."
                 return hostResult
               }
-            ]), embedded: true
+            ]), embedded: true, state: documentState, calculations: calculations
           )
           .id(session.revision).frame(maxWidth: .infinity, alignment: .leading)
         } else {
@@ -673,11 +1080,12 @@ private struct ChatScreen: View {
         .accessibilityIdentifier("chat-input")
       Button {
         let message = input
+        let validation = calculations.flatMap { registry in selectedExample?.policy(registry: registry) }
         originalSources.append(message)
         input = ""
         composerFocused = false
         Task {
-          await session.send(message)
+          await session.send(message, validation: validation)
           if session.phase == .ready { panel = "Document" }
         }
       } label: {
@@ -690,6 +1098,71 @@ private struct ChatScreen: View {
     }
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+/// Simulator-only fixture input. The session owns document and example validation.
+private actor ChatDocumentFileProvider: DocumentGenerationProvider {
+  private let path: String?
+  private static let maximumBytes = 65_536
+
+  init(path: String?) { self.path = path }
+
+  func generate(_ request: DocumentGenerationRequest) async throws -> Data {
+    try Task.checkCancellation()
+    guard let path, !path.isEmpty, !path.hasPrefix("--"),
+      !path.contains(":"), !path.contains("\0"),
+      !path.split(separator: "/").contains("..")
+    else { throw UIError("Synthetic fixture path is invalid.") }
+
+    let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+      .standardizedFileURL.resolvingSymlinksInPath()
+    let candidate = path.hasPrefix("/")
+      ? URL(fileURLWithPath: path).standardizedFileURL
+      : home.appendingPathComponent(path).standardizedFileURL
+    let resolved = candidate.resolvingSymlinksInPath()
+    let homeComponents = home.pathComponents
+    guard resolved.pathComponents.count > homeComponents.count,
+      resolved.pathComponents.starts(with: homeComponents)
+    else { throw UIError("Synthetic fixture path is invalid.") }
+
+    do {
+      // Inspect the supplied path, not only its resolved destination. No symlink is allowed.
+      var componentURL = URL(fileURLWithPath: "/", isDirectory: true)
+      for component in candidate.pathComponents.dropFirst() {
+        componentURL.appendPathComponent(component)
+        let attributes = try FileManager.default.attributesOfItem(atPath: componentURL.path)
+        guard attributes[.type] as? FileAttributeType != .typeSymbolicLink else {
+          throw UIError("Synthetic fixture path is invalid.")
+        }
+      }
+      let attributes = try FileManager.default.attributesOfItem(atPath: resolved.path)
+      guard attributes[.type] as? FileAttributeType == .typeRegular else {
+        throw UIError("Synthetic fixture could not be read.")
+      }
+      let handle = try FileHandle(forReadingFrom: resolved)
+      defer { try? handle.close() }
+      var bytes = Data()
+      while bytes.count <= Self.maximumBytes {
+        try Task.checkCancellation()
+        let chunk = try handle.read(upToCount: Self.maximumBytes + 1 - bytes.count) ?? Data()
+        if chunk.isEmpty { break }
+        bytes.append(chunk)
+      }
+      guard bytes.count <= Self.maximumBytes else {
+        throw UIError("Synthetic fixture exceeds 65536 bytes.")
+      }
+      try Task.checkCancellation()
+      return bytes
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch let error as UIError {
+      throw error
+    } catch {
+      throw UIError("Synthetic fixture could not be read.")
+    }
+  }
+}
+#endif
 
 /// Explicit deterministic fixtures; they neither inspect keywords nor claim model inference.
 private actor SyntheticChatProvider: DocumentGenerationProvider {
@@ -706,8 +1179,48 @@ private actor SyntheticChatProvider: DocumentGenerationProvider {
         return Data(#"{"version":1,"root":{"id":"r","type":"webview"}}"#.utf8)
       }
     }
+    if failure == "meal-source" || failure == "meal-projection" {
+      return try Self.mealFixture(changedSource: count > 1 && failure == "meal-source", missingProjection: count > 1 && failure == "meal-projection")
+    }
     let number = ["provider", "malformed", "unknown"].contains(failure) ? count - 1 : count
     return Data((number == 1 ? Self.plan : Self.handover).utf8)
+  }
+  /// Deterministic acceptance regression data, never selected from user text.
+  private static func mealFixture(changedSource: Bool, missingProjection: Bool) throws -> Data {
+    func collection(_ id: String, fields: [String: String], rows: [[String: Any]]) -> [String: Any] {
+      ["id": id, "schema": ["fields": fields], "rows": rows.enumerated().map {
+        ["id": "row-\($0.offset)", "values": $0.element]
+      }]
+    }
+    let children: [[String: Any]] = [
+      ["id": "fixture-title", "type": "text", "text": "Synthetic meal acceptance fixture"],
+      ["id": "fixture-people", "type": "control", "title": "People", "controlType": "stepper", "binding": "people"],
+      ["id": "fixture-time", "type": "control", "title": "Meal time", "controlType": "datePicker", "binding": "time"],
+      ["id": "fixture-shopping", "type": "table", "columns": ["Ingredient", "Quantity", "Unit"], "rows": [["Pending", "Pending", "Pending"]], "recordSource": "shopping", "recordFields": ["name", "quantity", "unit"]],
+      ["id": "fixture-schedule", "type": "timeline", "title": "Schedule", "events": [["time": "Start", "title": "Step", "detail": "End"]], "recordSource": "schedule", "recordFields": ["start", "title", "end"]],
+    ]
+    let source: [String: Any] = [
+      "version": 1,
+      "state": [
+        ["id": "base", "kind": "number", "value": 2, "minimum": 1, "maximum": MealPlanning.maximumPeople, "step": 1],
+        ["id": "people", "kind": "number", "value": 3, "minimum": 1, "maximum": MealPlanning.maximumPeople, "step": 1],
+        ["id": "time", "kind": "date", "value": "2026-10-15T19:00:00Z"],
+      ],
+      "records": [
+        collection("ingredients", fields: ["name": "text", "quantity": "number", "unit": "text"], rows:
+          zip(["lentils", "rice", "carrots"], [changedSource ? 201 : 200, 150, 100]).map {
+            ["name": $0.0, "quantity": $0.1, "unit": "g"]
+          }),
+        collection("steps", fields: ["title": "text", "minutes": "number"], rows:
+          zip(["preparation", "cooking", "serving"], [10, 25, 5]).map { ["title": $0.0, "minutes": $0.1] }),
+      ],
+      "calculations": [["id": "fixture-plan", "capability": "meal-plan",
+        "inputs": ["basePeople": "base", "people": "people", "mealTime": "time"],
+        "outputs": [String: String](), "recordInputs": ["ingredients": "ingredients", "steps": "steps"],
+        "recordOutputs": ["shopping": "shopping", "schedule": "schedule"]]],
+      "root": ["id": "fixture-root", "type": "vstack", "children": missingProjection ? Array(children.dropLast()) : children],
+    ]
+    return try JSONSerialization.data(withJSONObject: source, options: [.sortedKeys])
   }
   private static let plan =
     #"{"version":1,"root":{"id":"plan","type":"vstack","spacing":16,"children":[{"id":"title","type":"text","text":"Library volunteer plan","style":"title"},{"id":"prep","type":"section","title":"Preparation","children":[{"id":"tasks","type":"list","items":["Set up the welcome desk","Sort the returned books","Review the shift handover"]}],"spacing":12},{"id":"shifts","type":"section","title":"Saturday shifts","spacing":12,"children":[{"id":"table","type":"table","columns":["Task","Time"],"rows":[["Welcome desk","10am"],["Book sorting","2pm"]]}]},{"id":"note","type":"callout","text":"Synthetic fixture for interaction testing.","tone":"note"},{"id":"ack","type":"button","title":"Acknowledge","action":"acknowledge"}]},"floatingActions":[]}"#

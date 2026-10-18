@@ -59,13 +59,15 @@
   A020 = {isa = XCLocalSwiftPackageReference; relativePath = ..;};
   A044 = {isa = PBXBuildFile; productRef = A022;};
   A046 = {isa = PBXBuildFile; productRef = A023;};
+  A04B = {isa = PBXBuildFile; productRef = A024;};
   A023 = {isa = XCSwiftPackageProductDependency; productName = SwiftUIIntelligenceFoundationModels;};
+  A024 = {isa = XCSwiftPackageProductDependency; productName = SwiftUIIntelligenceExamples;};
   A022 = {isa = XCSwiftPackageProductDependency; productName = SwiftUIIntelligenceWeatherDemo;};
   A021 = {isa = XCSwiftPackageProductDependency; productName = SwiftUIIntelligence;};
-  A004 = {isa = PBXNativeTarget; buildConfigurationList = A011; buildPhases = (A050, A051, A052); buildRules = (); dependencies = (); name = SwiftUIIntelligenceDemo; packageProductDependencies = (A021, A022, A023); productName = SwiftUIIntelligenceDemo; productReference = A008; productType = "com.apple.product-type.application";};
+  A004 = {isa = PBXNativeTarget; buildConfigurationList = A011; buildPhases = (A050, A051, A052); buildRules = (); dependencies = (); name = SwiftUIIntelligenceDemo; packageProductDependencies = (A021, A022, A023, A024); productName = SwiftUIIntelligenceDemo; productReference = A008; productType = "com.apple.product-type.application";};
   A005 = {isa = PBXNativeTarget; buildConfigurationList = A012; buildPhases = (A053, A054, A055); buildRules = (); dependencies = (A061); name = SwiftUIIntelligenceDemoUITests; productName = SwiftUIIntelligenceDemoUITests; productReference = A009; productType = "com.apple.product-type.bundle.ui-testing";};
   A050 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A040); runOnlyForDeploymentPostprocessing = 0;};
-  A051 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A043, A044, A046); runOnlyForDeploymentPostprocessing = 0;};
+  A051 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A043, A044, A046, A04B); runOnlyForDeploymentPostprocessing = 0;};
   A052 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A041, A045, A047, A048, A049, A057, A058, A059, E200, E201, E210, E211, E220, E221, E230, E231, E240, E241, E250, E251); runOnlyForDeploymentPostprocessing = 0;};
   A053 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A042); runOnlyForDeploymentPostprocessing = 0;};
   A054 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;};
@@ -75,7 +77,7 @@
   A010 = {isa = XCConfigurationList; buildConfigurations = (A070, A071); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
   A011 = {isa = XCConfigurationList; buildConfigurations = (A072, A073); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
   A012 = {isa = XCConfigurationList; buildConfigurations = (A074, A075); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
-  A070 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 26.0; SWIFT_VERSION = 6.0; ONLY_ACTIVE_ARCH = YES; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES;};};
+  A070 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 26.0; SWIFT_VERSION = 6.0; ONLY_ACTIVE_ARCH = YES; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG"; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES;};};
   A071 = {isa = XCBuildConfiguration; name = Release; buildSettings = {ALWAYS_SEARCH_USER_PATHS = NO; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 26.0; SWIFT_VERSION = 6.0; SWIFT_OPTIMIZATION_LEVEL = "-O";};};
   A072 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = dev.local.SwiftUIIntelligenceDemo; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_EMIT_LOC_STRINGS = NO; CODE_SIGN_STYLE = Automatic;};};
   A073 = {isa = XCBuildConfiguration; name = Release; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = dev.local.SwiftUIIntelligenceDemo; PRODUCT_NAME = "$(TARGET_NAME)"; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; TARGETED_DEVICE_FAMILY = "1,2"; SWIFT_EMIT_LOC_STRINGS = NO; CODE_SIGN_STYLE = Automatic;};};

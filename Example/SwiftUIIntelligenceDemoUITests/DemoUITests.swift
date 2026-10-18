@@ -2,6 +2,710 @@ import UIKit
 import XCTest
 
 @MainActor final class DemoUITests: XCTestCase {
+  func testPublicWrapperRetainsOriginalAndDetailsAcrossFailureRetryReset() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--public-wrapper-fixture"]
+    app.launch()
+    let input = app.textFields["generated-prompt"]
+    XCTAssertTrue(input.waitForExistence(timeout: 5))
+    input.tap(); input.typeText("First original passage")
+    app.buttons["generated-send"].tap()
+    XCTAssertTrue(app.staticTexts["Synthetic public wrapper result"].waitForExistence(timeout: 10))
+    if UIDevice.current.userInterfaceIdiom == .pad {
+      let chat = app.buttons["generated-chat-tab"]
+      XCTAssertTrue(chat.waitForExistence(timeout: 5))
+      chat.tap()
+      XCTAssertTrue(app.staticTexts["generated-chat-message-0"].label.contains("First original passage"))
+      app.buttons["generated-original-tab"].tap()
+    }
+    let original = app.buttons["generated-original-button"]
+    XCTAssertTrue(original.waitForExistence(timeout: 5))
+    original.tap()
+    let sourcePanel = app.otherElements["generated-original-panel"]
+    XCTAssertTrue(sourcePanel.waitForExistence(timeout: 5))
+    XCTAssertEqual(sourcePanel.staticTexts["generated-source-text-0"].label, "First original passage")
+    app.buttons["Done"].tap()
+    app.buttons["generated-details-button"].tap()
+    let json = app.staticTexts["generated-details-json"]
+    XCTAssertTrue(json.waitForExistence(timeout: 5))
+    let completeJSON = json.label
+    XCTAssertTrue(completeJSON.contains("wrapper-result"))
+    app.buttons["generated-copy-json"].tap()
+    app.buttons["Done"].tap()
+    input.tap()
+    input.press(forDuration: 1.2)
+    XCTAssertTrue(app.menuItems["Paste"].waitForExistence(timeout: 3))
+    app.menuItems["Paste"].tap()
+    XCTAssertEqual(input.value as? String, completeJSON)
+    input.tap(); input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (input.value as? String ?? "").count))
+    input.tap(); input.typeText("Second original passage")
+    app.buttons["generated-send"].tap()
+    XCTAssertTrue(app.staticTexts["Synthetic wrapper failure"].waitForExistence(timeout: 10))
+    original.tap()
+    XCTAssertEqual(app.otherElements["generated-original-panel"].staticTexts["generated-source-text-1"].label, "Second original passage")
+    app.buttons["Done"].tap()
+    app.buttons["Retry"].tap()
+    XCTAssertTrue(app.buttons["Retry"].waitForNonExistence(timeout: 10))
+    app.buttons["generated-details-button"].tap()
+    XCTAssertTrue(app.staticTexts["generated-details-revision"].label.contains("2"))
+    app.buttons["Done"].tap()
+    app.buttons["generated-reset"].tap()
+    XCTAssertFalse(app.buttons["generated-original-button"].isEnabled)
+    XCTAssertFalse(app.staticTexts["Synthetic public wrapper result"].exists)
+  }
+
+  func testNativeSyntheticEquipmentInteractions() {
+    verifyNativeEquipment(appearance: "light")
+  }
+
+  func testNativeSyntheticBillInteractions() {
+    verifyNativeBill(appearance: "light")
+  }
+
+  func testNativeSyntheticEquipmentInteractionsInDarkAppearance() {
+    verifyNativeEquipment(appearance: "dark")
+  }
+
+  func testNativeSyntheticBillInteractionsInDarkAppearance() {
+    verifyNativeBill(appearance: "dark")
+  }
+
+  private func launchNativeFixture(_ fixture: String, example: String, appearance: String) -> XCUIApplication {
+    continueAfterFailure = false
+    prepareOrientation()
+    let app = XCUIApplication()
+    app.launchArguments = ["--chat-document-file", "Documents/\(fixture).json",
+      "--interactive-examples", "--appearance", appearance]
+    app.launch()
+    // Given an exported synthetic document, select acceptance explicitly before Send.
+    let selection = app.buttons[example]
+    XCTAssertTrue(selection.waitForExistence(timeout: 5))
+    selection.tap()
+    XCTAssertEqual(app.staticTexts["example-acceptance"].label,
+      "Selected example acceptance: \(example)")
+    app.buttons["chat-send"].tap()
+    XCTAssertTrue(app.buttons["original-source"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.staticTexts["chat-error"].exists)
+    if app.buttons["document-panel"].exists { app.buttons["document-panel"].tap() }
+    return app
+  }
+
+  private func verifyNativeEquipment(appearance: String) {
+    let app = launchNativeFixture("equipment", example: "Equipment comparison", appearance: appearance)
+    assertNativeCell("matches:mapped-tree:selected:1", text: "True", app: app)
+    assertNativeCell("matches:mapped-ground:selected:1", text: "False", app: app)
+    assertEquipmentChart([("Cedar", "price", 120), ("Cedar", "weight", 900),
+      ("Moss", "price", 85), ("Moss", "weight", 1200)], app: app)
+    attachNative("equipment-\(appearance)-initial", app: app)
+
+    // When selection changes, derived selection changes, but chart points do not filter.
+    toggleNative("selector:mapped-ground:selected:1", app: app)
+    assertNativeCell("matches:mapped-ground:selected:1", text: "True", app: app)
+    toggleNative("selector:mapped-ground:selected:1", app: app)
+    assertNativeCell("matches:mapped-ground:selected:1", text: "False", app: app)
+    assertEquipmentChart([("Cedar", "price", 120), ("Cedar", "weight", 900),
+      ("Moss", "price", 85), ("Moss", "weight", 1200)], app: app)
+
+    // Then cumulative bounds remove Cedar, remove Moss, and restore both candidates.
+    replaceNativeNumber("bounds:mapped-money:maximum:2", with: "100", app: app)
+    XCTAssertFalse(app.staticTexts["matches:mapped-tree:name:0"].exists)
+    assertNativeCell("matches:mapped-ground:name:0", text: "Moss", app: app)
+    assertEquipmentChart([("Moss", "price", 85), ("Moss", "weight", 1200)], app: app)
+    replaceNativeNumber("bounds:mapped-mass:maximum:2", with: "1000", app: app)
+    XCTAssertFalse(app.staticTexts["matches:mapped-ground:name:0"].exists)
+    assertEquipmentChart([], app: app)
+    XCTAssertTrue(app.staticTexts["No matching items."].firstMatch.exists)
+    replaceNativeNumber("bounds:mapped-money:maximum:2", with: "130", app: app)
+    replaceNativeNumber("bounds:mapped-mass:maximum:2", with: "1300", app: app)
+    assertNativeCell("matches:mapped-tree:name:0", text: "Cedar", app: app)
+    assertNativeCell("matches:mapped-ground:name:0", text: "Moss", app: app)
+    assertEquipmentChart([("Cedar", "price", 120), ("Cedar", "weight", 900),
+      ("Moss", "price", 85), ("Moss", "weight", 1200)], app: app)
+    attachNative("equipment-\(appearance)-edited-restored", app: app)
+  }
+
+  private func verifyNativeBill(appearance: String) {
+    let app = launchNativeFixture("bill", example: "Split bill", appearance: appearance)
+    // Worked integer expectations, independent of the app calculation registry:
+    // Soup 1001 / 2 -> 501,500; Tea 502 / 2 -> 251,251.
+    // Fees use proportional largest remainders, with person-ID tie breaking.
+    assertNativeBill(payable: 1654, food: [501, 751, 251], fees: [50, 76, 25],
+      totals: [551, 827, 276], soup: [501, 500, nil], app: app)
+    attachNative("bill-\(appearance)-initial", app: app)
+
+    // When item, fee, and participation edits accumulate, every output must update.
+    replaceNativeNumber("items-editor:mapped-soup:amountMinor:1", with: "1003", app: app)
+    assertNativeBill(payable: 1656, food: [502, 752, 251], fees: [50, 76, 25],
+      totals: [552, 828, 276], soup: [502, 501, nil], app: app)
+    let increment = app.buttons["fee-editor-Increment"]
+    revealNative(increment, app: app)
+    increment.tap()
+    increment.tap()
+    assertNativeBill(payable: 1658, food: [502, 752, 251], fees: [51, 76, 26],
+      totals: [553, 828, 277], soup: [502, 501, nil], app: app)
+    toggleNative("matrix-editor:mapped-pair-0-2:included:2", app: app)
+    // Soup 1003 / 3 -> 335,334,334; food -> 335,585,585.
+    assertNativeBill(payable: 1658, food: [335, 585, 585], fees: [34, 60, 59],
+      totals: [369, 645, 644], soup: [335, 334, 334], app: app)
+    attachNative("bill-\(appearance)-edited", app: app)
+  }
+
+  private func assertNativeBill(payable: Int, food: [Int], fees: [Int], totals: [Int],
+    soup: [Int?], app: XCUIApplication) {
+    for person in 0..<3 {
+      let prefix = "people-output:mapped-person-\(person)"
+      assertNativeCell(prefix + ":name:0", text: ["Ada", "Bo", "Cy"][person], app: app)
+      assertNativeNumber(prefix + ":foodMinor:1", expected: food[person], app: app)
+      assertNativeNumber(prefix + ":feeMinor:2", expected: fees[person], app: app)
+      assertNativeNumber(prefix + ":totalMinor:3", expected: totals[person], app: app)
+      let share = "shares-output:mapped-pair-0-\(person):amountMinor:2"
+      if let amount = soup[person] { assertNativeNumber(share, expected: amount, app: app) }
+      else { XCTAssertFalse(app.staticTexts[share].exists) }
+    }
+    XCTAssertFalse(app.staticTexts["shares-output:mapped-pair-1-0:amountMinor:2"].exists)
+    for person in 1...2 {
+      assertNativeNumber("shares-output:mapped-pair-1-\(person):amountMinor:2", expected: 251, app: app)
+    }
+    let metric = app.staticTexts.matching(identifier: "payable-output").matching(NSPredicate(format: "label == %@", String(payable))).firstMatch
+    let scroll = app.scrollViews["chat-document-scroll"]
+    for _ in 0..<8 {
+      if metric.exists && metric.frame.intersects(scroll.frame) { break }
+      scroll.swipeUp()
+    }
+    XCTAssertTrue(metric.exists, "Expected payable \(payable) in the rendered metric")
+    XCTAssertEqual(metric.label, String(payable))
+    XCTAssertFalse(app.staticTexts["calculation-error"].exists)
+  }
+
+  private func assertNativeCell(_ identifier: String, text: String, app: XCUIApplication) {
+    let cell = app.staticTexts[identifier]
+    let exists = cell.waitForExistence(timeout: 5)
+    if !exists { attachNativeAccessibility(app, reason: identifier) }
+    XCTAssertTrue(exists, identifier)
+    XCTAssertEqual(cell.label, text, identifier)
+  }
+
+  private func assertNativeNumber(_ identifier: String, expected: Int, app: XCUIApplication) {
+    let cell = app.staticTexts[identifier]
+    XCTAssertTrue(cell.waitForExistence(timeout: 5), identifier)
+    XCTAssertEqual(Double(cell.label.replacingOccurrences(of: ",", with: "")), Double(expected), identifier)
+  }
+
+  private func assertEquipmentChart(_ points: [(String, String, Int)], app: XCUIApplication) {
+    // Inspect only actual Swift Charts accessibility descendants, never table cells.
+    let chart = app.otherElements.matching(identifier: "plot").firstMatch
+    if points.isEmpty {
+      let title = app.staticTexts["Price (USD) and weight (g)"].firstMatch
+      revealNative(title, app: app)
+      XCTAssertTrue(title.exists)
+      XCTAssertFalse(app.staticTexts["Cedar, price"].exists)
+      XCTAssertFalse(app.staticTexts["Moss, price"].exists)
+      XCTAssertFalse(app.staticTexts["Cedar, weight"].exists)
+      XCTAssertFalse(app.staticTexts["Moss, weight"].exists)
+      return
+    }
+    revealNative(chart, app: app)
+    let marks = chart.descendants(matching: .any).allElementsBoundByIndex.filter {
+      !$0.label.isEmpty && $0.label != "Price (USD) and weight (g)"
+        && ($0.value as? String)?.isEmpty == false
+    }
+    XCTAssertEqual(marks.count, points.count,
+      "Expected individual accessible chart measurements, got: \(marks.map { "\($0.label): \(String(describing: $0.value))" })")
+    for (name, series, value) in points {
+      let matches = marks.filter { mark in
+        let label = mark.label
+        let output = (mark.value as? String ?? "").replacingOccurrences(of: ",", with: "")
+        return label.contains(name) && (label.contains(series) || output.contains(series))
+          && output.split(whereSeparator: { !$0.isNumber && $0 != "." }).contains(Substring(String(value)))
+      }
+      XCTAssertEqual(matches.count, 1, "Missing actual chart point: \(name), \(series), \(value)")
+    }
+  }
+
+  private func replaceNativeNumber(_ identifier: String, with value: String, app: XCUIApplication) {
+    let field = app.textFields[identifier]
+    revealNative(field, app: app)
+    field.tap()
+    field.press(forDuration: 1.2)
+    if app.menuItems["Select All"].waitForExistence(timeout: 2) {
+      app.menuItems["Select All"].tap()
+    } else {
+      field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 20))
+    }
+    field.typeText(value + "\n")
+    XCTAssertEqual(Double((field.value as? String ?? "").replacingOccurrences(of: ",", with: "")), Double(value))
+  }
+
+  private func toggleNative(_ identifier: String, app: XCUIApplication) {
+    let control = app.switches[identifier]
+    revealNative(control, app: app)
+    let before = control.value as? String
+    if control.switches.firstMatch.exists { control.switches.firstMatch.tap() } else { control.tap() }
+    XCTAssertNotEqual(control.value as? String, before)
+  }
+
+  private func revealNative(_ element: XCUIElement, app: XCUIApplication) {
+    let scroll = app.scrollViews["chat-document-scroll"]
+    for _ in 0..<12 {
+      if element.isHittable { return }
+      if element.exists && element.frame.midY < scroll.frame.midY { scroll.swipeDown() }
+      else { scroll.swipeUp() }
+    }
+    XCTAssertTrue(element.isHittable, element.identifier)
+  }
+
+  private func attachNativeAccessibility(_ app: XCUIApplication, reason: String) {
+    let tree = app.debugDescription
+    print("Native accessibility at \(reason):\n\(tree)")
+    for label in ["Cedar", "Moss"] {
+      for element in app.otherElements.matching(NSPredicate(format: "label == %@", label)).allElementsBoundByIndex {
+        print("Actual chart accessibility label=\(element.label), value=\(String(describing: element.value))")
+      }
+    }
+    let attachment = XCTAttachment(string: tree)
+    attachment.name = "synthetic-native-accessibility-\(reason)"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+  }
+
+  private func attachNative(_ name: String, app: XCUIApplication) {
+    let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "phone"
+    if name.hasPrefix("bill-") {
+      let label = app.staticTexts.matching(identifier: "payable-output").matching(NSPredicate(format: "label == %@", "Payable (MINOR UNITS)")).firstMatch
+      let scroll = app.scrollViews["chat-document-scroll"]
+      for _ in 0..<8 {
+        if label.exists && label.frame.intersects(scroll.frame) { break }
+        scroll.swipeUp()
+      }
+      XCTAssertTrue(label.exists)
+    }
+    attach("synthetic-native-\(device)-\(name)", app: app)
+  }
+
+  func testDebugSimulatorLoadsStagedSyntheticDocumentThroughSession() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--chat-document-file", "Documents/native-smoke.json", "--chat-fixture", "none"]
+    app.launch()
+    send("Render staged synthetic document", app: app)
+    XCTAssertTrue(app.staticTexts["Staged synthetic interaction fixture"].waitForExistence(timeout: 10))
+    waitForRevision(1, app: app)
+  }
+
+  func testDebugSimulatorFixtureRejectsMissingAndEscapingPaths() {
+    continueAfterFailure = false
+    for arguments in [[], ["/etc/hosts"], ["Documents/../native-smoke.json"]] {
+      let app = XCUIApplication()
+      app.launchArguments = ["--chat-fixture", "none", "--chat-document-file"] + arguments
+      app.launch()
+      send("Reject an invalid synthetic fixture path", app: app)
+      XCTAssertTrue(app.staticTexts["chat-error"].waitForExistence(timeout: 10))
+      XCTAssertFalse(app.staticTexts["Library volunteer plan"].exists)
+      XCTAssertFalse(app.staticTexts["Document 1 ready."].exists)
+      app.terminate()
+    }
+  }
+
+  func testDebugSimulatorFixtureRejectsMalformedOversizeAndSymlinkFiles() {
+    continueAfterFailure = false
+    for name in ["native-malformed.json", "native-oversize.json", "native-symlink.json"] {
+      let app = XCUIApplication()
+      app.launchArguments = ["--chat-document-file", "Documents/\(name)", "--chat-fixture", "none"]
+      app.launch()
+      send("Reject invalid staged synthetic data", app: app)
+      let error = app.staticTexts["chat-error"]
+      XCTAssertTrue(error.waitForExistence(timeout: 10), name)
+      if name == "native-oversize.json" { XCTAssertEqual(error.label, "Synthetic fixture exceeds 65536 bytes.") }
+      if name == "native-symlink.json" { XCTAssertEqual(error.label, "Synthetic fixture path is invalid.") }
+      if name == "native-malformed.json" { XCTAssertNotEqual(error.label, "Synthetic fixture could not be read.") }
+      XCTAssertFalse(app.staticTexts["Document 1 ready."].exists)
+      XCTAssertFalse(app.staticTexts["Library volunteer plan"].exists)
+      app.terminate()
+    }
+  }
+
+  func testDebugSimulatorFixtureAcceptsExactByteLimit() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--chat-document-file", "Documents/native-limit.json", "--chat-fixture", "none"]
+    app.launch()
+    send("Render exact-limit synthetic data", app: app)
+    XCTAssertTrue(app.staticTexts["Staged synthetic interaction fixture"].waitForExistence(timeout: 10))
+    waitForRevision(1, app: app)
+  }
+
+  func testSelectedMealRejectsChangedSourceAndRetainsAcceptedDocument() {
+    verifySelectedMealRejection(fixture: "meal-source")
+  }
+
+  func testSelectedMealRejectsMissingProjectionAndRetainsAcceptedDocument() {
+    verifySelectedMealRejection(fixture: "meal-projection")
+  }
+
+  func testInteractiveMenuDoesNotRouteFreeformTextByKeywords() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--interactive-examples", "--chat-fixture", "meal-source"]
+    app.launch()
+    // Given no explicit selection, even example keywords retain generic chat validation.
+    send("meal plan split bill equipment comparison", app: app)
+    XCTAssertTrue(app.staticTexts["Synthetic meal acceptance fixture"].waitForExistence(timeout: 10))
+    send("meal plan", app: app)
+    waitForRevision(2, app: app)
+    XCTAssertFalse(app.staticTexts["chat-error"].exists)
+    XCTAssertEqual(app.staticTexts["example-acceptance"].label,
+      "Choose an example to apply its acceptance checks.")
+  }
+
+  func testSelectedMealRejectionInDarkAppearance() {
+    verifySelectedMealRejection(fixture: "meal-source", dark: true)
+  }
+
+  private func verifySelectedMealRejection(fixture: String, dark: Bool = false) {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--interactive-examples", "--chat-fixture", fixture]
+    if dark { app.launchArguments += ["--appearance", "dark"] }
+    app.launch()
+    // Given an explicitly selected example, accept the first synthetic response.
+    app.buttons["Meal plan"].tap()
+    XCTAssertEqual(app.staticTexts["example-acceptance"].label, "Selected example acceptance: Meal plan")
+    app.buttons["chat-send"].tap()
+    XCTAssertTrue(app.staticTexts["Synthetic meal acceptance fixture"].waitForExistence(timeout: 10))
+    let increment = app.buttons["fixture-people-Increment"]
+    XCTAssertTrue(increment.waitForExistence(timeout: 5))
+    increment.tap()
+    XCTAssertTrue(app.staticTexts["People: 4"].waitForExistence(timeout: 5))
+    // When a typed follow-up returns invalid source facts or a missing projection,
+    // the explicit selection must still apply without keyword routing.
+    send("Keep these edits", app: app)
+    XCTAssertTrue(app.staticTexts["chat-error"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["The previous document is still available."].exists)
+    XCTAssertTrue(app.staticTexts["People: 4"].exists)
+    waitForRevision(1, app: app)
+    app.buttons["original-source"].tap()
+    XCTAssertTrue(app.staticTexts["source-text-1"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.staticTexts["source-text-1"].label, "Keep these edits")
+    if app.buttons["Done"].exists {
+      app.buttons["Done"].tap()
+    } else {
+      app.buttons["comparison-chat"].tap()
+    }
+    attach("synthetic-selected-\(fixture)-rejected\(dark ? "-dark" : "")", app: app)
+    if fixture == "meal-source" {
+      // Then choosing a different example keeps the previous accepted session intact.
+      app.buttons["Split bill"].tap()
+      XCTAssertEqual(app.staticTexts["example-acceptance"].label, "Selected example acceptance: Split bill")
+      app.buttons["chat-send"].tap()
+      XCTAssertTrue(app.staticTexts["chat-error"].waitForExistence(timeout: 10))
+      XCTAssertTrue(app.staticTexts["People: 4"].exists)
+      waitForRevision(1, app: app)
+      app.buttons["chat-reset"].tap()
+      XCTAssertEqual(app.staticTexts["example-acceptance"].label,
+        "Choose an example to apply its acceptance checks.")
+      XCTAssertFalse(app.buttons["original-source"].exists)
+    }
+  }
+
+  func testChatShowsValidatedProgressiveComponentsBeforeFinalDocument() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--chat-progressive-fixture"]
+    app.launch()
+    send("Show the synthetic preview", app: app)
+    XCTAssertTrue(app.staticTexts["Chat provisional component"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["document-preview-status"].exists)
+    XCTAssertTrue(app.buttons["original-source"].exists)
+    attach("chat-progressive-component", app: app)
+  }
+
+  func testChatSelectionSurvivesProgressiveLayoutRetry() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--chat-progressive-fixture"]
+    app.launch()
+    send("Keep my panel selection", app: app)
+    XCTAssertTrue(app.staticTexts["Chat provisional component"].waitForExistence(timeout: 10))
+    app.buttons["chat-panel"].tap()
+    app.buttons["Advance synthetic preview"].tap()
+    XCTAssertTrue(app.staticTexts["Synthetic preview attempt advanced"].waitForExistence(timeout: 5))
+    XCTAssertEqual(app.buttons["chat-panel"].value as? String, "Selected")
+    app.buttons["document-panel"].tap()
+    XCTAssertTrue(app.staticTexts["Retried provisional component"].waitForExistence(timeout: 5))
+  }
+
+  func testReadOnlyProgressivePreviewCannotMutateOrDispatch() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--progressive-preview"]
+    app.launch()
+
+    // Given an accepted document and a host edit, its state must survive a preview.
+    XCTAssertTrue(app.staticTexts["Prior accepted"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Host state: 2"].exists)
+    app.buttons["Edit accepted"].tap()
+    XCTAssertTrue(app.staticTexts["Host state: 3"].waitForExistence(timeout: 5))
+
+    // When a complete synthetic component arrives, it is visible but read-only.
+    app.buttons["Begin preview"].tap()
+    XCTAssertTrue(app.staticTexts["Preview visible"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["document-preview-status"].firstMatch.exists)
+    XCTAssertTrue(app.staticTexts["Second complete component"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Prior accepted"].exists)
+    let increment = app.buttons["preview-input-Increment"]
+    let submit = app.buttons["Preview submit"]
+    XCTAssertTrue(increment.exists)
+    XCTAssertTrue(submit.exists)
+    XCTAssertFalse(increment.isEnabled)
+    XCTAssertFalse(submit.isEnabled)
+    XCTAssertTrue(increment.isHittable)
+    XCTAssertTrue(submit.isHittable)
+    XCTAssertTrue(app.staticTexts["Preview input: 2"].exists)
+    increment.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    submit.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    XCTAssertTrue(app.staticTexts["Host actions: 0"].exists)
+    XCTAssertTrue(app.staticTexts["Host state: 3"].exists)
+    XCTAssertTrue(app.staticTexts["Preview input: 2"].exists)
+    let previews = app.scrollViews["generated-preview-components"]
+    for _ in 0..<3 {
+      if app.staticTexts["Second complete component"].isHittable { break }
+      previews.swipeUp()
+    }
+    XCTAssertTrue(app.staticTexts["Second complete component"].isHittable)
+    attach("synthetic-read-only-progressive-preview", app: app)
+
+    // Then cancellation removes only the preview and retains accepted state.
+    app.buttons["Cancel"].tap()
+    let ready = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: app.buttons["Begin preview"])
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+    XCTAssertFalse(app.staticTexts["Preview visible"].exists)
+    XCTAssertFalse(app.staticTexts["Second complete component"].exists)
+    XCTAssertFalse(app.staticTexts["document-preview-status"].exists)
+    XCTAssertTrue(app.staticTexts["Prior accepted"].exists)
+    XCTAssertTrue(app.staticTexts["Host state: 3"].exists)
+    XCTAssertTrue(app.staticTexts["Host actions: 0"].exists)
+    attach("synthetic-progressive-preview-cancelled", app: app)
+  }
+
+  func testFailedProgressivePreviewPreservesAcceptedDocument() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--progressive-preview-failure"]
+    app.launch()
+    XCTAssertTrue(app.staticTexts["Prior accepted"].waitForExistence(timeout: 10))
+    app.buttons["Edit accepted"].tap()
+    XCTAssertTrue(app.staticTexts["Host state: 3"].waitForExistence(timeout: 5))
+    app.buttons["Begin preview"].tap()
+    XCTAssertTrue(app.staticTexts["Preview visible"].waitForExistence(timeout: 10))
+    app.buttons["Complete generation"].tap()
+    XCTAssertTrue(app.staticTexts["Synthetic generation failed."].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Retry"].exists)
+    XCTAssertFalse(app.staticTexts["Preview visible"].exists)
+    XCTAssertFalse(app.staticTexts["Second complete component"].exists)
+    XCTAssertTrue(app.staticTexts["Prior accepted"].exists)
+    XCTAssertTrue(app.staticTexts["Host state: 3"].exists)
+    XCTAssertTrue(app.staticTexts["Host actions: 0"].exists)
+    attach("synthetic-progressive-preview-failed", app: app)
+  }
+
+  func testProgressivePreviewEnablesOnlyAcceptedFinalDocument() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--progressive-preview-final"]
+    app.launch()
+
+    // Given an accepted document with a host edit, preview controls remain read-only.
+    XCTAssertTrue(app.staticTexts["Prior accepted"].waitForExistence(timeout: 10))
+    app.buttons["Edit accepted"].tap()
+    XCTAssertTrue(app.staticTexts["Host state: 3"].waitForExistence(timeout: 5))
+    app.buttons["Begin preview"].tap()
+    XCTAssertTrue(app.staticTexts["Preview visible"].waitForExistence(timeout: 10))
+    XCTAssertTrue(app.staticTexts["Second complete component"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["preview-input-Increment"].isEnabled)
+    XCTAssertFalse(app.buttons["Preview submit"].isEnabled)
+    XCTAssertFalse(app.staticTexts["Final accepted"].exists)
+    XCTAssertTrue(app.staticTexts["Host actions: 0"].exists)
+
+    // When the provider completes, only the accepted final document becomes interactive.
+    let complete = app.buttons["Complete generation"]
+    XCTAssertTrue(complete.waitForExistence(timeout: 5))
+    XCTAssertTrue(complete.isEnabled)
+    complete.tap()
+    XCTAssertTrue(app.staticTexts["Final accepted"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.staticTexts["Preview visible"].exists)
+    XCTAssertFalse(app.staticTexts["Second complete component"].exists)
+    XCTAssertFalse(app.staticTexts["document-preview-status"].exists)
+    XCTAssertFalse(app.buttons["Preview submit"].exists)
+    XCTAssertFalse(app.staticTexts["Prior accepted"].exists)
+    XCTAssertTrue(app.staticTexts["Host state: 3"].exists)
+    XCTAssertTrue(app.staticTexts["Final input: 3"].exists)
+    XCTAssertTrue(app.staticTexts["Host actions: 0"].exists)
+
+    // Then final controls retain the host edit and dispatch only a user action.
+    let increment = app.buttons["final-input-Increment"]
+    XCTAssertTrue(increment.isEnabled)
+    increment.tap()
+    XCTAssertTrue(app.staticTexts["Host state: 4"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Final input: 4"].exists)
+    let submit = app.buttons["Submit final"]
+    XCTAssertTrue(submit.isEnabled)
+    submit.tap()
+    XCTAssertTrue(app.staticTexts["Host actions: 1"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Host state: 4"].exists)
+    attach("synthetic-progressive-preview-final-accepted", app: app)
+  }
+
+  func testCancelledCompletionGateCanImmediatelyRestartAndAcceptFinal() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--progressive-preview-final"]
+    app.launch()
+
+    // Given a host edit and a preview waiting at the completion gate (not a sleep).
+    XCTAssertTrue(app.staticTexts["Prior accepted"].waitForExistence(timeout: 10))
+    app.buttons["Edit accepted"].tap()
+    XCTAssertTrue(app.staticTexts["Host state: 3"].waitForExistence(timeout: 5))
+    app.buttons["Begin preview"].tap()
+    XCTAssertTrue(app.buttons["Complete generation"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Second complete component"].waitForExistence(timeout: 5))
+
+    // When cancellation is followed immediately by another generation.
+    app.buttons["Cancel"].tap()
+    let ready = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: app.buttons["Begin preview"])
+    XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+    app.buttons["Begin preview"].tap()
+    XCTAssertTrue(app.buttons["Complete generation"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Preview visible"].exists)
+    XCTAssertFalse(app.buttons["Preview submit"].isEnabled)
+    XCTAssertTrue(app.staticTexts["Host state: 3"].exists)
+    app.buttons["Complete generation"].tap()
+
+    // Then the new gate completes, clears previews, and preserves host-owned state.
+    XCTAssertTrue(app.staticTexts["Final accepted"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.staticTexts["Preview visible"].exists)
+    XCTAssertFalse(app.staticTexts["Second complete component"].exists)
+    XCTAssertFalse(app.staticTexts["document-preview-status"].exists)
+    XCTAssertTrue(app.staticTexts["Host state: 3"].exists)
+    XCTAssertTrue(app.staticTexts["Final input: 3"].exists)
+    XCTAssertTrue(app.buttons["final-input-Increment"].isEnabled)
+    XCTAssertTrue(app.buttons["Submit final"].isEnabled)
+    XCTAssertTrue(app.staticTexts["Host actions: 0"].exists)
+    app.buttons["Submit final"].tap()
+    XCTAssertTrue(app.staticTexts["Host actions: 1"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Host state: 3"].exists)
+    attach("synthetic-progressive-preview-cancel-restart", app: app)
+  }
+
+  func testProgressivePreviewFinalAcceptanceInDarkAppearance() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--progressive-preview-final", "--appearance", "dark"]
+    app.launch()
+    XCTAssertTrue(app.staticTexts["Prior accepted"].waitForExistence(timeout: 10))
+    app.buttons["Begin preview"].tap()
+    XCTAssertTrue(app.staticTexts["Preview visible"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["Preview submit"].isEnabled)
+    XCTAssertTrue(app.staticTexts["Host actions: 0"].exists)
+    attach("progressive-preview-dark", app: app)
+    app.buttons["Complete generation"].tap()
+    XCTAssertTrue(app.staticTexts["Final accepted"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.staticTexts["Preview visible"].exists)
+    XCTAssertTrue(app.buttons["Submit final"].isEnabled)
+    app.buttons["Submit final"].tap()
+    XCTAssertTrue(app.staticTexts["Host actions: 1"].waitForExistence(timeout: 5))
+    attach("progressive-final-dark", app: app)
+  }
+
+  func testPublicWrapperRetainsSessionRegistryAfterParentReplacement() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--wrapper-registry"]
+    app.launch()
+    let prompt = app.textFields["generated-prompt"]
+    prompt.tap()
+    prompt.typeText("Synthetic calculation")
+    app.buttons["generated-send"].tap()
+    XCTAssertTrue(app.staticTexts["Session result: 4"].waitForExistence(timeout: 10))
+    app.buttons["Replace parent registry"].tap()
+    app.buttons["input-control-Increment"].tap()
+    XCTAssertTrue(app.staticTexts["Session result: 6"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["Session result: 9"].exists)
+    attach("public-wrapper-registry-identity", app: app)
+  }
+
+  func testRecordCellsRecalculateGenericDocument() {
+    continueAfterFailure = false
+    let app = XCUIApplication()
+    app.launchArguments = ["--record-editing"]
+    app.launch()
+    XCTAssertTrue(app.staticTexts["Total: 125"].waitForExistence(timeout: 10))
+    let included = app.switches["items-table:tea:included:2"]
+    if included.switches.firstMatch.exists { included.switches.firstMatch.tap() } else { included.tap() }
+    XCTAssertTrue(app.staticTexts["Total: 0"].waitForExistence(timeout: 5))
+    if included.switches.firstMatch.exists { included.switches.firstMatch.tap() } else { included.tap() }
+    XCTAssertTrue(app.staticTexts["Total: 125"].waitForExistence(timeout: 5))
+    let amount = app.textFields["items-table:tea:amount:1"]
+    amount.tap()
+    amount.press(forDuration: 1.2)
+    if app.menuItems["Select All"].waitForExistence(timeout: 2) { app.menuItems["Select All"].tap() }
+    amount.typeText("150\n")
+    XCTAssertTrue(app.staticTexts["Total: 150"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["150"].exists)
+    XCTAssertTrue(app.staticTexts["Total minor units"].exists)
+    attach("native-record-edits", app: app)
+    amount.tap()
+    amount.press(forDuration: 1.2)
+    if app.menuItems["Select All"].waitForExistence(timeout: 2) { app.menuItems["Select All"].tap() }
+    amount.typeText("-1\n")
+    XCTAssertTrue(app.staticTexts["items-table-edit-error"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Total: 150"].exists)
+    attach("native-record-invalid-edit", app: app)
+  }
+
+  func testCalculationRegistryAndStateReplacementReloadUnchangedDocument() {
+    let app = XCUIApplication()
+    app.launchArguments = ["--calculation-lifecycle"]
+    app.launch()
+    XCTAssertTrue(app.staticTexts["Derived value: 4"].waitForExistence(timeout: 10))
+    app.buttons["Replace registry"].tap()
+    XCTAssertTrue(app.staticTexts["Derived value: 6"].waitForExistence(timeout: 5))
+    app.buttons["Replace state"].tap()
+    XCTAssertTrue(app.staticTexts["Derived value: 6"].waitForExistence(timeout: 5))
+    app.buttons["input-Increment"].tap()
+    XCTAssertTrue(app.staticTexts["Derived value: 9"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["9"].exists)
+    let scroll = app.scrollViews["generic-document-scroll"]
+    for _ in 0..<3 {
+      if app.staticTexts["Prepare portions"].isHittable { break }
+      scroll.swipeUp()
+    }
+    XCTAssertTrue(app.staticTexts["Prepare portions"].exists)
+    XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label == %@", "Derived value: 9")).count, 2)
+    let itemLabels = app.staticTexts.matching(NSPredicate(format: "label == %@", "Synthetic item"))
+    for _ in 0..<4 {
+      let labels = itemLabels.allElementsBoundByIndex
+      if labels.count == 2 && labels.allSatisfy(\.isHittable) { break }
+      app.swipeUp()
+    }
+    XCTAssertEqual(itemLabels.count, 2)
+    XCTAssertTrue(itemLabels.allElementsBoundByIndex.allSatisfy(\.isHittable))
+    XCTAssertTrue(app.staticTexts["9"].exists)
+    attach("reactive-text-chart-timeline-table-list", app: app)
+    app.buttons["Empty chart"].tap()
+    for _ in 0..<4 {
+      if app.staticTexts["Filtered comparison"].isHittable { break }
+      app.swipeUp()
+    }
+    XCTAssertTrue(app.staticTexts["Filtered comparison"].isHittable)
+    app.buttons["Invalid replacement"].tap()
+    XCTAssertTrue(app.staticTexts["calculation-error"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["Derived value: 180"].exists)
+    XCTAssertFalse(app.staticTexts["Calculated amount"].exists)
+  }
+
   func testReferenceNarrativeAndDatedCards() {
     prepareOrientation()
     continueAfterFailure = false
