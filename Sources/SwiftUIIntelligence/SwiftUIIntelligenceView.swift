@@ -203,12 +203,13 @@ enum DocumentSurfacePolicy {
 private struct NodeView: View {
   @Environment(DocumentState.self) private var state
   @Environment(\.documentDestinations) private var destinations
+  @Environment(\.colorScheme) private var colorScheme
   let node: UINode
   let run: (String) -> Void
   var showsSurface = true
   var sectionTitle: String? = nil
   var inheritedCardColor: CardColor = .neutral
-  private var effectiveCardColor: CardColor { showsSurface ? node.cardColor ?? inheritedCardColor : inheritedCardColor }
+  private var effectiveCardColor: CardColor { node.cardColor ?? inheritedCardColor }
 
   // Type erasure is confined to recursion over a validated heterogeneous tree.
   @ViewBuilder var body: some View {
@@ -220,7 +221,7 @@ private struct NodeView: View {
       } header: { SymbolText(text: node.title, icon: node.icon) }
     } else if node.type == .control {
       Group {
-        if showsSurface { content.modifier(SwiftUIIntelligenceSurface(cardColor: effectiveCardColor)) } else { content }
+        if showsSurface { content.modifier(SwiftUIIntelligenceSurface(inset: 14, cardColor: effectiveCardColor)) } else { content }
       }.id(node.id)
     } else if node.type == .vstack || node.type == .hstack || node.type == .grid || node.type == .section || node.type == .form || (node.type == .table && !node.editableFields.isEmpty) {
       surface.id(node.id).accessibilityElement(children: .contain).accessibilityIdentifier(node.id)
@@ -231,7 +232,7 @@ private struct NodeView: View {
 
   private var surface: some View {
     Group {
-      if showsSurface && node.type != .button && node.type != .vstack && node.type != .hstack && node.type != .grid && node.type != .timeline && (!layoutHasSections || node.type == .section) && node.type != .navigationLink {
+      if showsSurface && node.type != .button && (node.type != .vstack || node.cardColor != nil) && node.type != .hstack && node.type != .grid && node.type != .timeline && node.type != .section && node.type != .navigationLink {
         content.frame(maxWidth: .infinity, maxHeight: node.type == .metric ? .infinity : nil, alignment: .topLeading)
           .modifier(SwiftUIIntelligenceSurface(inset: node.type == .metric ? 12 : 18, cardColor: effectiveCardColor))
       } else {
@@ -245,7 +246,7 @@ private struct NodeView: View {
     case .vstack:
       AnyView(
         VStack(alignment: .leading, spacing: max(8, node.spacing)) {
-          ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: DocumentSurfacePolicy.childSurface(parentShowsSurface: showsSurface), sectionTitle: sectionTitle, inheritedCardColor: effectiveCardColor) }
+          ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: (showsSurface && node.cardColor != nil) ? false : DocumentSurfacePolicy.childSurface(parentShowsSurface: showsSurface), sectionTitle: sectionTitle, inheritedCardColor: effectiveCardColor) }
         })
     case .hstack:
       AnyView(
@@ -259,7 +260,13 @@ private struct NodeView: View {
         })
     case .grid:
       AnyView(
-        AdaptiveNodeGrid(maxColumns: node.columnCount, spacing: node.spacing, minimumCellWidth: node.children.contains(where: { $0.type == .chart }) ? 240 : 90) {
+        AdaptiveNodeGrid(
+          maxColumns: node.columnCount,
+          spacing: node.spacing,
+          minimumCellWidth: node.children.contains(where: { $0.type == .chart }) ? 240
+            : node.children.contains(where: { $0.type == .image || $0.children.contains(where: { $0.type == .image }) }) ? 160
+            : 90
+        ) {
           ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: showsSurface, sectionTitle: sectionTitle, inheritedCardColor: effectiveCardColor) }
         })
     case .text:
@@ -274,10 +281,11 @@ private struct NodeView: View {
     case .section:
       AnyView(
         VStack(alignment: .leading, spacing: max(8, node.spacing)) {
-          if !node.children.contains(where: { $0.type == .text && $0.text == node.title }) {
-            SymbolText(text: node.title, icon: node.icon).font(.headline).foregroundStyle(.primary)
+          if !node.children.contains(where: { $0.type == .text && $0.text == node.title }),
+             !(node.children.count == 1 && !node.children[0].title.isEmpty) {
+            SymbolText(text: node.title, icon: node.icon, tint: effectiveCardColor.swiftUIColor != .primary ? effectiveCardColor.swiftUIColor : nil).font(.headline).foregroundStyle(.primary)
           }
-          ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: false, sectionTitle: node.title, inheritedCardColor: effectiveCardColor) }
+          ForEach(node.children.filter { destinations[$0.id] == nil }) { NodeView(node: $0, run: run, showsSurface: true, sectionTitle: node.title, inheritedCardColor: effectiveCardColor) }
         })
     case .list:
       AnyView(
@@ -294,46 +302,51 @@ private struct NodeView: View {
         })
     case .table:
       AnyView(
-        Group {
-        if !node.editableFields.isEmpty { RecordTableView(node: node) }
-        else if let rows = try? node.resolvedRows(in: state.records) {
-        if rows.isEmpty { Text("No matching items.") }
-        else {
-        ViewThatFits(in: .horizontal) {
-          Grid(alignment: .topLeading, horizontalSpacing: 18, verticalSpacing: 12) {
-            GridRow {
-              ForEach(Array(node.columns.enumerated()), id: \.offset) { _, column in
-                Text(column).font(.subheadline.bold()).frame(
-                  minWidth: 110, maxWidth: 200, alignment: .leading)
-              }
-            }
-            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
-              GridRow {
-                ForEach(Array(row.enumerated()), id: \.offset) { columnIndex, cell in
-                  Text(cell).frame(minWidth: 110, maxWidth: 200, alignment: .leading)
-                    .accessibilityIdentifier(tableCellIdentifier(row: rowIndex, column: columnIndex))
-                }
-              }
-            }
-          }.font(.subheadline).foregroundStyle(.primary)
-          VStack(alignment: .leading, spacing: 16) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
-              VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(node.columns.enumerated()), id: \.offset) { index, column in
-                  HStack(alignment: .top) {
-                    Text(column).font(.subheadline.bold())
-                    Spacer(minLength: 12)
-                    Text(row[index]).font(.subheadline).multilineTextAlignment(.trailing)
-                      .accessibilityIdentifier(tableCellIdentifier(row: rowIndex, column: index))
-                  }
-                }
-              }
-              Divider()
-            }
+        VStack(alignment: .leading, spacing: 12) {
+          if !node.title.isEmpty, node.title != sectionTitle {
+            SymbolText(text: node.title, icon: node.icon, tint: (node.cardColor ?? effectiveCardColor).swiftUIColor != .primary ? (node.cardColor ?? effectiveCardColor).swiftUIColor : nil).font(.headline).foregroundStyle(.primary)
           }
-        }.accessibilityElement(children: .contain)
-        }
-        } else { Text("Table values are not available.") }
+          Group {
+            if !node.editableFields.isEmpty { RecordTableView(node: node) }
+            else if let rows = try? node.resolvedRows(in: state.records) {
+              if rows.isEmpty { Text("No matching items.") }
+              else {
+                ViewThatFits(in: .horizontal) {
+                  Grid(alignment: .topLeading, horizontalSpacing: 18, verticalSpacing: 12) {
+                    GridRow {
+                      ForEach(Array(node.columns.enumerated()), id: \.offset) { _, column in
+                        Text(column).font(.subheadline.bold()).frame(
+                          minWidth: 110, maxWidth: 200, alignment: .leading)
+                      }
+                    }
+                    ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                      GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { columnIndex, cell in
+                          Text(cell).frame(minWidth: 110, maxWidth: 200, alignment: .leading)
+                            .accessibilityIdentifier(tableCellIdentifier(row: rowIndex, column: columnIndex))
+                        }
+                      }
+                    }
+                  }.font(.subheadline).foregroundStyle(.primary)
+                  VStack(alignment: .leading, spacing: 16) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                      VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(node.columns.enumerated()), id: \.offset) { index, column in
+                          HStack(alignment: .top) {
+                            Text(column).font(.subheadline.bold())
+                            Spacer(minLength: 12)
+                            Text(row[index]).font(.subheadline).multilineTextAlignment(.trailing)
+                              .accessibilityIdentifier(tableCellIdentifier(row: rowIndex, column: index))
+                          }
+                        }
+                      }
+                      Divider()
+                    }
+                  }
+                }.accessibilityElement(children: .contain)
+              }
+            } else { Text("Table values are not available.") }
+          }
         })
     case .callout:
       AnyView(
@@ -381,10 +394,33 @@ private struct NodeView: View {
         }
         } else { Text("Timeline values are not available.") }
       })
+    case .image:
+      AnyView(ImageView(node: node))
     case .button:
       AnyView(
-        Button { run(node.action) } label: { SymbolText(text: node.title, icon: node.icon) }
-          .accessibilityIdentifier(node.id))
+        Button { run(node.action) } label: {
+          if node.title.isEmpty, let icon = node.icon {
+            Image(systemName: SymbolCatalog.systemName(for: icon))
+              .font(.subheadline.weight(.semibold))
+              .foregroundStyle(.primary)
+              .frame(width: 38, height: 38)
+              .background(Circle().strokeBorder(Color.secondary.opacity(0.35), lineWidth: 1.2))
+          } else {
+            HStack(spacing: 6) {
+              if let icon = node.icon {
+                Image(systemName: SymbolCatalog.systemName(for: icon))
+                  .font(.subheadline.weight(.semibold))
+              }
+              Text(node.title).font(.subheadline.weight(.semibold))
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 9)
+            .background(Capsule().fill(colorScheme == .dark ? Color.white : Color.black))
+            .foregroundStyle(colorScheme == .dark ? Color.black : Color.white)
+          }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(node.id))
 
     }
   }
@@ -516,5 +552,66 @@ private struct ControlNodeView: View {
         }
       }
     }
+  }
+}
+
+private struct ImageView: View {
+  let node: UINode
+  var body: some View {
+    let ratio = CGFloat(node.aspectRatio ?? 1.4)
+    GeometryReader { geo in
+      Group {
+        if !node.url.isEmpty, let url = URL(string: node.url), url.scheme == "http" || url.scheme == "https" {
+          AsyncImage(url: url) { phase in
+            switch phase {
+            case .success(let image):
+              image
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+            case .failure:
+              placeholder
+            case .empty:
+              ZStack {
+                placeholder
+                ProgressView()
+              }
+            @unknown default:
+              placeholder
+            }
+          }
+        } else {
+          placeholder
+        }
+      }
+      .frame(width: geo.size.width, height: geo.size.height)
+    }
+    .aspectRatio(ratio, contentMode: .fit)
+    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(node.alt.isEmpty ? (node.title.isEmpty ? "Image" : node.title) : node.alt)
+    .accessibilityIdentifier(node.id)
+  }
+
+  private var placeholder: some View {
+    ZStack {
+      LinearGradient(
+        colors: [Color.secondary.opacity(0.12), Color.secondary.opacity(0.06)],
+        startPoint: .topLeading,
+        endPoint: .bottomTrailing
+      )
+      VStack(spacing: 6) {
+        Image(systemName: SymbolCatalog.systemName(for: node.icon ?? "photo"))
+          .font(.title2)
+          .foregroundStyle(.secondary)
+        if !node.title.isEmpty {
+          Text(node.title)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }

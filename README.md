@@ -14,6 +14,16 @@ Later messages revise the document.
 
 The repository is private. No license file or public release is supplied.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/ipad-paris.png" width="100%" alt="iPad Pro Landscape Side-by-Side View" />
+</p>
+
+| Modern Hotel Cards & Gallery | Split Bill Allocation | Equipment Comparison | Meal Planning |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/screenshots/phone-paris.png" width="220" alt="Modern Hotels in Paris" /> | <img src="docs/screenshots/bill.png" width="220" alt="Split Bill Allocation" /> | <img src="docs/screenshots/equipment.png" width="220" alt="Equipment Comparison" /> | <img src="docs/screenshots/meal.png" width="220" alt="Meal Planning" /> |
+
 ## How it works
 
 1. The host collects the conversation.

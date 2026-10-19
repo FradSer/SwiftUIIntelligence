@@ -31,7 +31,7 @@ public enum CardColor: String, Codable, CaseIterable, Sendable {
 /// Immutable nodes can only be created by the constrained decoder.
 public struct UINode: Codable, Identifiable, Sendable {
   public enum Kind: String, Codable, Sendable, CaseIterable {
-    case vstack, hstack, grid, text, button, section, list, table, callout, metric, iconList, badge, progress, chart, form, control, navigationLink, timeline
+    case vstack, hstack, grid, text, button, section, list, table, callout, metric, iconList, badge, progress, chart, form, control, navigationLink, timeline, image
   }
   public enum TextStyle: String, Codable, Sendable { case title, headline, body, caption }
   public let cardColor: CardColor?
@@ -69,9 +69,12 @@ public struct UINode: Codable, Identifiable, Sendable {
   public let recordSource: String?
   public let recordFields: [String]
   public let editableFields: [String]
+  public let url: String
+  public let alt: String
+  public let aspectRatio: Double?
 
   private enum CodingKeys: String, CodingKey {
-    case editableFields, recordSource, recordFields, cardColor, id, type, children, spacing, columnCount, text, style, title, action, items, columns, rows, tone, icon, label, value, valueBinding, detail, iconItems, completed, total, chartStyle, points, controlType, binding, destination, events
+    case editableFields, recordSource, recordFields, cardColor, id, type, children, spacing, columnCount, text, style, title, action, items, columns, rows, tone, icon, label, value, valueBinding, detail, iconItems, completed, total, chartStyle, points, controlType, binding, destination, events, url, alt, aspectRatio
   }
 
   public init(from decoder: any Decoder) throws {
@@ -110,6 +113,9 @@ public struct UINode: Codable, Identifiable, Sendable {
       : kind == .text && values.contains(.binding) ? try values.decode(String.self, forKey: .binding) : ""
     destination = kind == .navigationLink ? try values.decode(String.self, forKey: .destination) : ""
     events = kind == .timeline ? try values.decode([TimelineEvent].self, forKey: .events) : []
+    url = kind == .image && values.contains(.url) ? (try? values.decode(String.self, forKey: .url)) ?? "" : ""
+    alt = kind == .image && values.contains(.alt) ? (try? values.decode(String.self, forKey: .alt)) ?? "" : ""
+    aspectRatio = kind == .image && values.contains(.aspectRatio) ? try values.decode(Double.self, forKey: .aspectRatio) : nil
     switch kind {
     case .vstack, .hstack, .grid, .section, .form:
       try checkKeys(
@@ -136,21 +142,31 @@ public struct UINode: Codable, Identifiable, Sendable {
     case .list, .table:
       try checkKeys(
         decoder,
-        allowed: kind == .list ? ["cardColor", "id", "type", "items", "recordSource", "recordFields"] : ["cardColor", "id", "type", "columns", "rows", "recordSource", "recordFields", "editableFields"])
+        allowed: kind == .list
+          ? ["cardColor", "id", "type", "title", "icon", "items", "recordSource", "recordFields"]
+          : ["cardColor", "id", "type", "title", "icon", "columns", "rows", "recordSource", "recordFields", "editableFields"])
       children = []
       spacing = 0
       text = ""
       style = .body
-      title = ""
+      title = (values.contains(.title) ? (try? values.decode(String.self, forKey: .title)) ?? "" : "")
       action = ""
     case .button:
       try checkKeys(decoder, allowed: ["cardColor", "id", "type", "title", "action", "icon"])
-      title = try values.decode(String.self, forKey: .title)
+      title = (values.contains(.title) ? (try? values.decode(String.self, forKey: .title)) ?? "" : "")
       action = try values.decode(String.self, forKey: .action)
       children = []
       spacing = 0
       text = ""
       style = .body
+    case .image:
+      try checkKeys(decoder, allowed: ["cardColor", "id", "type", "url", "alt", "aspectRatio", "icon", "title"])
+      title = (values.contains(.title) ? (try? values.decode(String.self, forKey: .title)) ?? "" : "")
+      children = []
+      spacing = 0
+      text = ""
+      style = .body
+      action = ""
     case .control, .navigationLink, .timeline:
       let fields: Set<String> = kind == .control ? ["cardColor", "id", "type", "title", "controlType", "binding"] : kind == .navigationLink ? ["cardColor", "id", "type", "title", "destination"] : ["cardColor", "id", "type", "title", "events", "recordSource", "recordFields"]
       try checkKeys(decoder, allowed: fields)
@@ -195,8 +211,10 @@ public struct UINode: Codable, Identifiable, Sendable {
       try c.encode(text, forKey: .text)
       try c.encode(tone, forKey: .tone)
     case .list:
+      if !title.isEmpty { try c.encode(title, forKey: .title) }
       try c.encode(items, forKey: .items)
     case .table:
+      if !title.isEmpty { try c.encode(title, forKey: .title) }
       try c.encode(columns, forKey: .columns)
       try c.encode(rows, forKey: .rows)
     case .control:
@@ -219,6 +237,11 @@ public struct UINode: Codable, Identifiable, Sendable {
     case .chart:
       try c.encode(title, forKey: .title); try c.encode(chartStyle, forKey: .chartStyle)
       try c.encode(points, forKey: .points)
+    case .image:
+      if !url.isEmpty { try c.encode(url, forKey: .url) }
+      if !alt.isEmpty { try c.encode(alt, forKey: .alt) }
+      if let aspectRatio { try c.encode(aspectRatio, forKey: .aspectRatio) }
+      if !title.isEmpty { try c.encode(title, forKey: .title) }
     }
   }
 
@@ -444,11 +467,19 @@ public struct UIDocument: Codable, Sendable {
             "Table '\(node.id)' needs 1–6 columns, 1–32 rectangular rows and bounded cells.")
         }
       }
+      if node.type == .image {
+        guard node.url.count <= 2048 else { throw UIError("Image '\(node.id)' url exceeds 2048 characters.") }
+        guard node.alt.count <= 500 else { throw UIError("Image '\(node.id)' alt exceeds 500 characters.") }
+        if let ratio = node.aspectRatio {
+          guard ratio >= 0.2 && ratio <= 5.0 else { throw UIError("Image '\(node.id)' aspectRatio must be between 0.2 and 5.0.") }
+        }
+      }
       if node.type == .button {
-        guard !node.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-          node.title.count <= 80
-        else {
-          throw UIError("Button '\(node.id)' needs a title of 1–80 characters.")
+        guard !node.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || node.icon != nil else {
+          throw UIError("Button '\(node.id)' needs a title or an icon.")
+        }
+        guard node.title.count <= 80 else {
+          throw UIError("Button '\(node.id)' title must be at most 80 characters.")
         }
         guard validIdentifier(node.action), registeredActions.contains(node.action) else {
           throw UIError(

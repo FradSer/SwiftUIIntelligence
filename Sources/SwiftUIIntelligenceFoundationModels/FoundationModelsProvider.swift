@@ -671,6 +671,22 @@ public struct FoundationModelsDocumentProvider: StreamingDocumentGenerationProvi
     guard projectedComponents.isSubset(of: [.list, .table, .chart, .timeline]), projectedComponents.isSubset(of: kinds) else {
       throw UIError("Projected requirements must reference available projection-capable kinds.")
     }
+    var schemaObj = try JSONSerialization.jsonObject(with: native) as? [String: Any] ?? [:]
+    if var defs = schemaObj["$defs"] as? [String: [String: Any]],
+       var node = defs["Node"], var branches = node["anyOf"] as? [[String: Any]] {
+      for i in 0..<branches.count {
+        guard var props = branches[i]["properties"] as? [String: [String: Any]] else { continue }
+        if var children = props["children"] {
+          children["maxItems"] = 4
+          props["children"] = children
+        }
+        branches[i]["properties"] = props
+      }
+      node["anyOf"] = branches
+      defs["Node"] = node
+      schemaObj["$defs"] = defs
+      return try JSONSerialization.data(withJSONObject: schemaObj, options: [.sortedKeys])
+    }
     return native
   }
 
@@ -906,15 +922,15 @@ public struct FoundationModelsDocumentProvider: StreamingDocumentGenerationProvi
         let layoutPrompt = conversation + "\nCatalog:\n" + String(decoding: catalog, as: UTF8.self) + (feedback.isEmpty ? "" : "\n" + feedback)
         let specificViewGuide: String = {
           if selectedCapabilities.contains("compare-records") {
-            return "For equipment comparison, plan 4 tables and 1 chart: table purpose 'product selection editor', table purpose 'filter conditions editor', table purpose 'filtered matches summary', table purpose 'measurements comparison table', and chart purpose 'measurements comparison chart'."
+            return "For equipment comparison, plan EXACTLY 5 slots: 1 table for products selection, 1 table for filter conditions editor, 1 table for filtered matches summary, 1 table for measurements comparison table, and 1 chart for measurements comparison chart. Do not author any other tables."
           } else if selectedCapabilities.contains("split-bill") {
-            return "For bill splitting, plan: table purpose 'item amounts editor', table purpose 'participation assignments editor', table purpose 'personal totals breakdown', table purpose 'item shares summary', control for fee, and metric for payable total."
+            return "For bill splitting, plan EXACTLY 6 slots: table purpose 'item amounts editor', table purpose 'participation assignments editor', table purpose 'personal breakdown table', table purpose 'item shares table', control purpose 'fee stepper' (componentType must be 'control', not text), and metric purpose 'payable total metric'. Each table must have a distinct purpose matching one distinct collection; do not duplicate breakdown or assignment tables."
           } else if selectedCapabilities.contains("meal-plan") {
-            return "For meal planning, plan: table purpose 'shopping list table', timeline purpose 'cooking schedule timeline', and controls for people and time."
+            return "For meal planning, plan EXACTLY 4 slots: 1 control for people stepper, 1 control for datePicker, 1 table for shopping list, and 1 timeline for cooking schedule."
           }
-          return "Plan distinct slots for all requested editors and views."
+          return "Plan distinct slots: exactly one view per collection, 2 to 6 slots total."
         }()
-        let planner = LanguageModelSession(instructions: scopedRequest.calculationContainerInstructions + "\nAuthor only a generic container tree and leaf slots. Root must be a single vstack with 2-3 sections; each section contains slots directly or in an hstack (max depth 3; never nest section in section). Give every node a unique ID. \(specificViewGuide) ALL tables, charts, and timelines MUST use mode: 'records'. Only controls and text use mode: 'static'. Plan 'metric' for totals. Do not author leaf content.")
+        let planner = LanguageModelSession(instructions: scopedRequest.calculationContainerInstructions + "\nAuthor container tree and slots. Single vstack root with 2-3 sections; each section contains slots directly (max depth 3; never nest section in section). Unique IDs. Single-view-per-collection rule: plan at most ONE table per collection; never duplicate tables for the same collection. Converge total planned slots to 2 to 6 components total (never exceed 6 slots). Maintain calm, cohesive Liquid Glass cards with neutral appearance by default to guarantee user reading quality; use semantic cardColor purposefully only for an explicit category. \(specificViewGuide) ALL tables, charts, and timelines MUST use mode: 'records'. Only controls and text use mode: 'static'. Plan 'metric' for totals. Do not author leaf content.")
         // Three layout attempts permit at most three plans and 96 component calls. Components have no inner retry.
         try Task.checkCancellation()
         let planResponse = try await planner.respond(to: layoutPrompt, schema: Self.convertSchema(planSchemaData),
@@ -930,6 +946,9 @@ public struct FoundationModelsDocumentProvider: StreamingDocumentGenerationProvi
         guard plan.slots.allSatisfy({ availableKinds.contains($0.componentType.rawValue) }) else {
           throw UIError("The layout plan contains a component outside the selected scope.")
         }
+        guard (2...6).contains(plan.slots.count) else {
+          throw UIError("Layout plan deduplication error: planned \(plan.slots.count) slots. Total slots must be between 2 and 6.")
+        }
         try await previewAttempt.begin()
         var components: [String: Data] = [:]
         for (index, slot) in plan.slots.enumerated() {
@@ -943,11 +962,11 @@ public struct FoundationModelsDocumentProvider: StreamingDocumentGenerationProvi
             declarations: declarations, signatures: signatures,
             purpose: slot.purpose)
           onTrace("calculated-attempt-\(attempt)-component-\(slot.id)-schema", componentSchemaData)
-          let componentModel = LanguageModelSession(instructions: scopedRequest.calculationLayoutInstructions + "\nAuthor exactly one leaf component for the supplied slot and its model-authored purpose, not a document or container. Use its exact ID and component type. Preserve the accepted declarations. For a projected slot, explicitly author both recordSource and recordFields from the reference catalog. For an editor slot (editing items, conditions, or participation/selection), select the matching source collection and always include editableFields (for products: you MUST author editableFields: ['selected']; for conditions: you MUST author editableFields: ['minimum', 'maximum']; for items: editableFields: ['amountMinor']; for assignments: editableFields: ['included']); for calculated results (shopping, schedule, breakdown, shares, matches), select the declared output collection (for measurements table, select output collection and recordFields must be exactly ['name', 'field', 'value']). For an equipment chart, 'recordFields' must be exactly ['name', 'value', 'field']. For equipment tables and charts, column titles or chart titles must explicitly include units: 'Price (USD)' and 'Weight (g)'. For a metric displaying payable minor units, author label: 'Payable Total (minor units)' and valueBinding bound to the declared payable total state. For a table, 'columns' must contain exactly one column title per field in 'recordFields' (columns.count == recordFields.count), and each row in 'rows' must have the exact same number of cells as columns. For a chart, 'recordFields' must be [label (text), value (number), series (text)] in exact order; never use a numeric field in the third position. Each point in 'points' must have a unique [series, label] pair. For a timeline, 'recordFields' must be in exact ['start', 'title', 'end'] order. Never replace a requested record projection with static rows, prose, or invented data.")
-          let componentPrompt = Self.componentPrompt(layoutPrompt: layoutPrompt, slotData: slotData)
+          let componentModel = LanguageModelSession(instructions: "Author one leaf component for the supplied slot and its model-authored purpose matching the schema. Preserve accepted declarations. For every table and chart, author an explicit descriptive 'title'. Cards default to neutral Liquid Glass ('neutral') to guarantee high contrast and reading quality; use a semantic cardColor only when distinguishing an explicitly requested category. For a projected slot, explicitly author both recordSource and recordFields from the reference catalog. For an editor slot (editing items, conditions, or participation/selection), select the matching source collection and always include editableFields (for products: you MUST author editableFields: ['selected']; for conditions: recordFields must be ['field', 'minimum', 'maximum'] and editableFields: ['minimum', 'maximum']; for items: editableFields: ['amountMinor']; for assignments: editableFields: ['included']); for calculated results (shopping, schedule, breakdown, shares, matches), select the declared output collection (for measurements table, select output collection and recordFields must be exactly ['name', 'field', 'value']). For an equipment chart, title must be 'Price (USD) and Weight (g) Comparison' and recordFields must be exactly ['name', 'value', 'field']. For equipment tables and charts, column titles or chart titles must explicitly include units: 'Price (USD)' and 'Weight (g)'. For a metric displaying payable minor units, author label: 'Payable Total (minor units)' and valueBinding bound to the declared payable total state. For datePicker, binding must be date state (meal time). For stepper, binding must be number state (people/fee). For a table, 'columns' must contain clean human-readable headers without code suffixes (e.g. 'Amount', 'Food Share', 'Fee Share'), exactly one column title per field in 'recordFields' (columns.count == recordFields.count), and each row in 'rows' must have the exact same number of cells as columns. For a chart, 'recordFields' must be [label (text), value (number), series (text)] in exact order; never use a numeric field in the third position. Each point in 'points' must have a unique [series, label] pair. For a timeline, 'recordFields' must be in exact ['start', 'title', 'end'] order. Never replace a requested record projection with static rows, prose, or invented data.")
+          let componentPrompt = Self.componentPrompt(layoutPrompt: "Catalog:\n" + String(decoding: catalog, as: UTF8.self), slotData: slotData)
           try Task.checkCancellation()
           let response = try await componentModel.respond(to: componentPrompt, schema: Self.convertSchema(componentSchemaData),
-            options: GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 1800))
+            options: GenerationOptions(samplingMode: .greedy, maximumResponseTokens: 500))
           try Task.checkCancellation()
           let component = Data(response.content.jsonString.utf8)
           onTrace("calculated-attempt-\(attempt)-component-\(slot.id)", component)
@@ -975,6 +994,21 @@ public struct FoundationModelsDocumentProvider: StreamingDocumentGenerationProvi
         let document = try UIDocument.decode(data, registeredActions: request.registeredActions,
           registeredCalculations: selectedCapabilities)
         try document.validateRecordFields(signatures: signatures)
+        var nodes: [UINode] = []
+        func collectNodes(_ n: UINode) { nodes.append(n); n.children.forEach(collectNodes) }
+        collectNodes(document.root)
+        var tableSources = Set<String>()
+        for t in nodes where t.type == .table {
+          if let src = t.recordSource {
+            guard tableSources.insert(src).inserted else {
+              throw UIError("Layout deduplication violated: redundant duplicate table for collection '\(src)'. Each collection must have at most one table.")
+            }
+          }
+        }
+        let totalComponents = nodes.filter { [.table, .chart, .timeline, .control, .metric].contains($0.type) }.count
+        guard (2...6).contains(totalComponents) else {
+          throw UIError("Layout deduplication violated: document has \(totalComponents) components, outside the required 2 to 6 range.")
+        }
         try request.validateSemantics(document)
         return data
     }

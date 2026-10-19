@@ -86,7 +86,7 @@ enum NativeCorrelatedComponentSchema {
     }
     let branches = try leaves(definition)
     definitions[kind.rawValue] = ["anyOf": try branches.flatMap { branch in
-      try eligible.map { try correlate(branch, collection: $0, kind: kind, prefersEditable: prefersEditable) }
+      try eligible.map { try correlate(branch, collection: $0, kind: kind, selectedSignatures: selectedSignatures, prefersEditable: prefersEditable) }
     }]
     root["$defs"] = definitions
     // Reuse extraction to retain the complete existing reference closure, including static fallback grammar.
@@ -121,7 +121,7 @@ enum NativeCorrelatedComponentSchema {
   }
 
   private static func correlate(_ branch: [String: Any], collection: Collection,
-    kind: UINode.Kind, prefersEditable: Bool = false) throws -> [String: Any] {
+    kind: UINode.Kind, selectedSignatures: [CalculationRegistry.Signature] = [], prefersEditable: Bool = false) throws -> [String: Any] {
     guard var fields = branch["properties"] as? [String: [String: Any]],
       fields["type"]?["enum"] as? [String] == [kind.rawValue],
       var source = fields["recordSource"], var projection = fields["recordFields"],
@@ -129,7 +129,26 @@ enum NativeCorrelatedComponentSchema {
       throw UIError("Record correlation requires the requested kind and projection properties.")
     }
     let textOnly = kind == .list || kind == .timeline
-    let names = collection.schema.fields.filter { !textOnly || $0.value == .text }.keys.sorted()
+    let names: [String] = {
+      let filtered = collection.schema.fields.filter { !textOnly || $0.value == .text }.keys
+      if kind == .timeline {
+        return filtered.sorted { a, b in
+          let priority = ["start": 0, "title": 1, "end": 2, "time": 0, "detail": 2]
+          let pa = priority[a] ?? 10
+          let pb = priority[b] ?? 10
+          return pa == pb ? a < b : pa < pb
+        }
+      }
+      if kind == .chart && collection.schema.fields.values.filter({ $0 == .text }).count >= 2 {
+        return filtered.sorted { a, b in
+          let priority = ["name": 0, "value": 1, "field": 2]
+          let pa = priority[a] ?? 10
+          let pb = priority[b] ?? 10
+          return pa == pb ? a < b : pa < pb
+        }
+      }
+      return filtered.sorted()
+    }()
     source["enum"] = [collection.id]
     if let role = collection.role {
       source["description"] = "Record collection ID for \(role). Select '\(collection.id)' for \(role)."
@@ -151,28 +170,62 @@ enum NativeCorrelatedComponentSchema {
     } else if kind == .table {
       let maxCols = min(names.count, 6)
       if var columns = fields["columns"] {
+        columns["minItems"] = maxCols
         columns["maxItems"] = maxCols
-        columns["description"] = "Header title for each column. Must contain exactly one column title per field in recordFields (columns.count == recordFields.count)."
+        columns["description"] = "Header title for each column. Must contain exactly one column title per field in recordFields."
         fields["columns"] = columns
       }
       if var rows = fields["rows"], var item = rows["items"] as? [String: Any] {
+        rows["maxItems"] = 3
+        item["minItems"] = maxCols
         item["maxItems"] = maxCols
         rows["items"] = item
         fields["rows"] = rows
       }
+      projection["minItems"] = maxCols
       projection["maxItems"] = maxCols
       if collection.role == "measurements" {
         projection["description"] = "Fields to display. For measurements table, select ['name', 'field', 'value']."
       } else {
-        projection["description"] = "The record fields to display, exactly one field per column header in columns (recordFields.count == columns.count)."
+        projection["description"] = "The record fields to display, exactly one field per column header in columns."
       }
     }
     fields["recordFields"] = projection
     var required = Set(branch["required"] as? [String] ?? [])
     required.formUnion(["recordSource", "recordFields"])
+    if kind == .table || kind == .chart || kind == .timeline {
+      if fields["title"] == nil {
+        fields["title"] = ["type": "string", "minLength": 1, "maxLength": 160]
+      }
+      var titleObj = fields["title"]!
+      titleObj["description"] = kind == .chart
+        ? "Descriptive chart title including units: 'Price (USD) and Weight (g) Comparison'."
+        : "Human-readable descriptive title for this card (e.g. 'Product Selection', 'Condition Limits', 'Shopping List')."
+      fields["title"] = titleObj
+      required.insert("title")
+      if fields["icon"] == nil {
+        fields["icon"] = ["type": "string", "minLength": 1, "maxLength": 80]
+      }
+      var iconObj = fields["icon"]!
+      iconObj["description"] = "Semantic SF Symbol icon key (e.g. 'checklist', 'slider.horizontal.3', 'cart')."
+      fields["icon"] = iconObj
+    }
+    if var cardColor = fields["cardColor"] {
+      cardColor["description"] = "Semantic card color matching the role: 'orange' for conditions/limits, 'blue' for products/selection/items, 'green' for shopping/breakdown/totals, 'purple' for schedule/timeline/shares/measurements, or 'neutral'."
+      fields["cardColor"] = cardColor
+    }
+    var refFieldsForInput = Set<String>()
+    if let role = collection.role {
+      for sig in selectedSignatures {
+        for ref in sig.recordReferences where ref.input == role {
+          refFieldsForInput.insert(ref.field)
+        }
+      }
+    }
     if collection.editable, kind == .table, var editable = fields["editableFields"],
       var editableItems = editable["items"] as? [String: Any] {
-      editableItems["enum"] = collection.schema.fields.keys.sorted()
+      let allowedEditable = collection.schema.fields.keys.filter { !refFieldsForInput.contains($0) }.sorted()
+      editableItems["enum"] = allowedEditable
       editable["items"] = editableItems
       fields["editableFields"] = editable
       if prefersEditable {

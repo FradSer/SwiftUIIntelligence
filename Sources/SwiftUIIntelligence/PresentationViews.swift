@@ -4,14 +4,37 @@ import SwiftUI
 struct SymbolText: View {
   let text: String
   let icon: String?
+  var tint: Color? = nil
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
+    HStack(alignment: .center, spacing: 10) {
       if let icon {
+        let symColor = tint ?? Self.accentColor(for: icon) ?? .primary
         Image(systemName: SymbolCatalog.systemName(for: icon))
+          .font(.subheadline.weight(.semibold))
+          .foregroundStyle(symColor)
+          .frame(width: 28, height: 28)
+          .background(symColor.opacity(symColor == .primary ? 0.08 : 0.14), in: Circle())
           .accessibilityHidden(true)
       }
       Text(text).fixedSize(horizontal: false, vertical: true)
     }
+  }
+
+  private static func accentColor(for key: String) -> Color? {
+    let lower = key.lowercased()
+    if lower.contains("food") || lower.contains("meal") || lower.contains("cart") || lower.contains("money") || lower.contains("receipt") {
+      return .green
+    }
+    if lower.contains("slider") || lower.contains("tune") || lower.contains("filter") || lower.contains("temp") {
+      return .orange
+    }
+    if lower.contains("check") || lower.contains("list") || lower.contains("water") || lower.contains("drop") {
+      return .blue
+    }
+    if lower.contains("time") || lower.contains("calendar") || lower.contains("schedule") || lower.contains("tag") || lower.contains("ruler") || lower.contains("scale") {
+      return .purple
+    }
+    return nil
   }
 }
 
@@ -29,8 +52,9 @@ struct PresentationNodeView: View {
     switch node.type {
     case .metric:
       let metricValue = (try? node.resolvedMetricValue(values: state.values)) ?? node.value
+      let cardTint = (node.cardColor ?? .neutral).swiftUIColor != .primary ? (node.cardColor ?? .neutral).swiftUIColor : nil
       VStack(alignment: .leading, spacing: 8) {
-        SymbolText(text: node.label, icon: node.icon).font(.caption).lineLimit(2).minimumScaleFactor(0.85).foregroundStyle(.secondary).frame(minHeight: 32, alignment: .topLeading)
+        SymbolText(text: node.label, icon: node.icon, tint: cardTint).font(.caption).lineLimit(2).minimumScaleFactor(0.85).foregroundStyle(.secondary).frame(minHeight: 32, alignment: .topLeading)
         Text(metricValue).font(.title2).monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
         if !node.detail.isEmpty && node.detail != metricValue { Text(node.detail).font(.caption).foregroundStyle(.secondary) }
       }.frame(maxWidth: .infinity, alignment: .leading)
@@ -41,13 +65,23 @@ struct PresentationNodeView: View {
         }
       }
     case .badge:
-      SymbolText(text: node.text, icon: node.icon)
-        .font(.caption)
-        .foregroundStyle(toneColor)
-        .accessibilityLabel("\(node.tone.rawValue): \(node.text)")
+      let tint = (node.cardColor?.swiftUIColor ?? toneColor)
+      HStack(spacing: 5) {
+        if let icon = node.icon {
+          Image(systemName: SymbolCatalog.systemName(for: icon))
+            .font(.caption2.weight(.semibold))
+        }
+        Text(node.text).font(.caption.weight(.medium))
+      }
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .background(Capsule().fill(tint.opacity(0.12)))
+      .foregroundStyle(tint)
+      .accessibilityLabel("\(node.tone.rawValue): \(node.text)")
     case .progress:
+      let cardTint = (node.cardColor ?? .neutral).swiftUIColor != .primary ? (node.cardColor ?? .neutral).swiftUIColor : nil
       VStack(alignment: .leading, spacing: 10) {
-        SymbolText(text: node.title, icon: node.icon).font(.headline)
+        SymbolText(text: node.title, icon: node.icon, tint: cardTint).font(.headline)
         ProgressView(value: node.completed, total: node.total)
         Text("\(node.completed.formatted()) / \(node.total.formatted()) · \((node.completed / node.total).formatted(.percent.precision(.fractionLength(0))))")
           .font(.caption).foregroundStyle(.secondary).monospacedDigit()

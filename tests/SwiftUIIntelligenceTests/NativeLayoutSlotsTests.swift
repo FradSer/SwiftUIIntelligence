@@ -215,4 +215,19 @@ import Testing
     }
     #expect(throws: UIError.self) { try NativeLayoutSlots.validatePlan(plan(["id": "root", "type": "vstack", "children": groups])) }
   }
+
+  @Test func layoutPlanAcceptsAndValidatesSectionCardColors() throws {
+    let validPlanData = try plan([
+      "id": "sec-1", "type": "section", "title": "Products", "cardColor": "blue",
+      "children": [slot("slot-1", "table", projected: true)]
+    ])
+    let validated = try NativeLayoutSlots.validatePlan(validPlanData)
+    #expect(validated.slots.count == 1)
+
+    let invalidPlanData = try plan([
+      "id": "sec-1", "type": "section", "title": "Products", "cardColor": "rainbow",
+      "children": [slot("slot-1", "table", projected: true)]
+    ])
+    #expect(throws: UIError.self) { try NativeLayoutSlots.validatePlan(invalidPlanData) }
+  }
 }

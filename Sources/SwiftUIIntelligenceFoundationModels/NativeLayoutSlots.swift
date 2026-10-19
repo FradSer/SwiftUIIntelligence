@@ -24,7 +24,7 @@ enum NativeLayoutSlots {
   }
 
   private static let containers: Set<UINode.Kind> = [.vstack, .hstack, .grid, .section, .form]
-  private static let supported: Set<UINode.Kind> = [.text, .control, .metric, .list, .table, .chart, .timeline]
+  private static let supported: Set<UINode.Kind> = [.text, .control, .metric, .list, .table, .chart, .timeline, .image]
   private static let projections: Set<UINode.Kind> = [.list, .table, .chart, .timeline]
   private static var identifierSchema: [String: Any] { [
     "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[A-Za-z0-9._-]+$",
@@ -59,6 +59,7 @@ enum NativeLayoutSlots {
       if kind == .section || kind == .form {
         fields["title"] = ["type": "string", "minLength": 1, "maxLength": 160]
         fields["icon"] = identifierSchema
+        fields["cardColor"] = ["type": "string", "enum": CardColor.allCases.map(\.rawValue)]
         required.append("title")
       }
       branches.append(object(fields, required: required.sorted()))
@@ -149,7 +150,7 @@ enum NativeLayoutSlots {
           supported.contains(kind), let projected = node["projected"] as? NSNumber,
           CFGetTypeID(projected) == CFBooleanGetTypeID(),
           !projected.boolValue || projections.contains(kind) else {
-          throw UIError("Slot '\(id)' requires a supported leaf kind. Text, control, and metric slots require projected=false. Only list, table, chart, and timeline support projected=true.")
+          throw UIError("Slot '\(id)' requires a supported leaf kind. Text, control, metric, and image slots require projected=false. Only list, table, chart, and timeline support projected=true.")
         }
         if let value = node["purpose"] {
           guard let purpose = value as? String, validPurpose(purpose) else {
@@ -174,7 +175,10 @@ enum NativeLayoutSlots {
         }
       }
       if kind == .section || kind == .form {
-        allowed.formUnion(["title", "icon"])
+        allowed.formUnion(["title", "icon", "cardColor"])
+        if let color = node["cardColor"] as? String {
+          guard CardColor(rawValue: color) != nil else { throw UIError("Unknown cardColor in layout plan.") }
+        }
         guard let title = node["title"] as? String, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           title.count <= 160 else { throw UIError("A section or form requires a title of one to 160 characters.") }
         if let icon = node["icon"] {

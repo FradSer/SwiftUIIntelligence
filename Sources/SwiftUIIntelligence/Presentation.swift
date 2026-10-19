@@ -1,4 +1,10 @@
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Versioned semantic SF Symbols catalog. JSON never names arbitrary image assets or URLs.
 public enum SymbolCatalog {
@@ -21,9 +27,25 @@ public enum SymbolCatalog {
     "temperature": "thermometer.medium", "humidity": "humidity.fill", "wind": "wind",
     "pressure": "gauge.medium", "visibility": "eye", "drop": "drop.fill", "moon": "moon.fill",
     "leaf": "leaf", "travel": "airplane", "home": "house", "star": "star", "play": "play.circle",
+    "sliders": "slider.horizontal.3", "filter": "line.3.horizontal.decrease.circle",
+    "tune": "slider.horizontal.3", "barChart": "chart.bar.fill", "ruler": "ruler",
+    "scale": "scalemass", "tag": "tag", "price": "tag", "weight": "scalemass",
+    "food": "fork.knife", "meal": "fork.knife", "drink": "cup.and.saucer", "receipt": "receipt",
+    "timer": "timer", "stopwatch": "stopwatch",
+    "wifi": "wifi", "bed": "bed.double.fill", "hotel": "building.2.fill", "spa": "water.waves",
+    "waves": "water.waves", "favorite": "heart.fill", "photo": "photo.fill", "gallery": "photo.stack",
+    "family": "figure.2.and.child.holdinghands",
   ]
   public static var keys: [String] { symbols.keys.sorted() }
-  public static func systemName(for key: String) -> String { symbols[key] ?? "questionmark.circle" }
+  public static func systemName(for key: String) -> String {
+    if let mapped = symbols[key] { return mapped }
+    #if canImport(UIKit)
+    if UIKit.UIImage(systemName: key) != nil { return key }
+    #elseif canImport(AppKit)
+    if AppKit.NSImage(systemSymbolName: key, accessibilityDescription: nil) != nil { return key }
+    #endif
+    return "questionmark.circle"
+  }
   public static func isKnown(_ key: String) -> Bool { symbols[key] != nil }
 }
 

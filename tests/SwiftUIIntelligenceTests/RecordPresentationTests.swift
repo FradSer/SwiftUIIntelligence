@@ -9,6 +9,16 @@ import SwiftUIIntelligence
   #expect(throws: UIError.self) { try document.validateRecordFields(signatures: signatures) }
 }
 
+@Test func tableProjectionDereferencesTargetEntityIDsToHumanNames() throws {
+  let json = #"{"id":"table","type":"table","columns":["Person"],"rows":[["Pending"]],"recordSource":"assignments","recordFields":["personID"]}"#
+  let node = try JSONDecoder().decode(UINode.self, from: Data(json.utf8))
+  let rows = try node.resolvedRows(in: [
+    "people": [.init(id: "p-ada", values: ["name": .text("Ada")])],
+    "assignments": [.init(id: "a-1", values: ["personID": .text("p-ada")])]
+  ])
+  #expect(rows == [["Ada"]])
+}
+
 @Test func tableProjectionPreservesFractionalNumericFacts() throws {
   let json = #"{"id":"table","type":"table","columns":["Amount"],"rows":[["Pending"]],"recordSource":"items","recordFields":["amount"]}"#
   let node = try JSONDecoder().decode(UINode.self, from: Data(json.utf8))

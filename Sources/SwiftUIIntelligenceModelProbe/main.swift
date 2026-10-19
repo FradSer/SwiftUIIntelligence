@@ -141,7 +141,7 @@ import SwiftUIIntelligenceExamples
           Pizza costs 1400 minor units and Leo and Mia share it (Noah and Olivia are excluded).
           Pasta costs 800 minor units and Mia, Noah, and Olivia share it (Leo is excluded).
           The fixed service fee is 220 minor units. Show editable item amounts, participation toggles for each item/person pair, and service fee.
-          Show personal food, service fee, and final total plus the exact payable total. Updates must happen locally after edits.
+          Show personal food, service fee, item shares, and the exact payable total. Updates must happen locally after edits.
           Use registered split-bill. Retain a complete assignment matrix including excluded participants.
           Never label minor units as major currency amounts. Do not invent people or charges.
           """

@@ -21,7 +21,7 @@ public enum ExampleRequests {
   Split this synthetic bill in one currency using integer minor units. Participants are Ada, Bo, and Cy.
   Soup costs 1001 minor units and Ada and Bo share it (Cy is excluded). Tea costs 502 minor units and Bo and Cy share it (Ada is excluded).
   The fixed service fee is 151 minor units. Show editable item amounts, participation toggles for each item/person pair, and service fee.
-  Show personal food, service fee, and final total plus the exact payable total. Updates must happen locally after edits.
+  Show personal food, service fee, item shares, and the exact payable total. Updates must happen locally after edits.
   Use registered split-bill. Retain a complete assignment matrix including excluded participants.
   Never label minor units as major currency amounts. Do not invent people or charges.
   """

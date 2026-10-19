@@ -17,11 +17,11 @@ public struct SwiftUIIntelligenceSurface: ViewModifier {
         content.padding(inset).background {
             shape.fill(.background)
               .overlay {
-                if cardColor != .neutral { shape.fill(cardColor.swiftUIColor.opacity(0.12)) }
+                if cardColor != .neutral { shape.fill(cardColor.swiftUIColor.opacity(0.04)) }
               }
           }
       } else {
-        content.padding(inset).glassEffect(cardColor == .neutral ? .regular : .regular.tint(cardColor.swiftUIColor.opacity(0.22)), in: shape)
+        content.padding(inset).glassEffect(cardColor == .neutral ? .regular : .regular.tint(cardColor.swiftUIColor.opacity(0.04)), in: shape)
       }
     }
   }

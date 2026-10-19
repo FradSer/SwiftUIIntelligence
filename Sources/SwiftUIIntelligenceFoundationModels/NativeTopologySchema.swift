@@ -8,7 +8,7 @@ enum NativeTopologySchema {
     parentPolicy: NativeLayoutTopology.ParentPolicy = .orderedPrefix,
     acceptedNodes: [NativeLayoutTopology.Node] = []
   ) throws -> Data {
-    let supported: Set<UINode.Kind> = [.vstack, .hstack, .grid, .section, .form, .text, .control, .metric, .list, .table, .chart, .timeline]
+    let supported: Set<UINode.Kind> = [.vstack, .hstack, .grid, .section, .form, .text, .control, .metric, .list, .table, .chart, .timeline, .image]
     guard !availableKinds.isEmpty, availableKinds.isSubset(of: supported) else {
       throw UIError("Topology guidance requires available supported layout kinds.")
     }
@@ -55,7 +55,7 @@ enum NativeTopologySchema {
       throw UIError("A topology payload requires an authored valid ID.")
     }
     let containers: Set<UINode.Kind> = [.vstack, .hstack, .grid, .section, .form]
-    let leaves: Set<UINode.Kind> = [.text, .control, .metric, .list, .table, .chart, .timeline]
+    let leaves: Set<UINode.Kind> = [.text, .control, .metric, .list, .table, .chart, .timeline, .image]
     guard containers.contains(kind) || leaves.contains(kind) else { throw UIError("Unsupported topology payload kind.") }
     var fields: [String: Any] = ["id": ["type": "string", "enum": [id]]]
     var required = ["id"]

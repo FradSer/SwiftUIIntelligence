@@ -4,7 +4,7 @@ import SwiftUIIntelligence
 /// Extracts one leaf schema without selecting component values or adding layout nodes.
 enum NativeComponentLayout {
   static func componentSchema(from data: Data, kind: UINode.Kind, projected: Bool) throws -> Data {
-    guard [.text, .control, .metric, .list, .table, .chart, .timeline].contains(kind) else {
+    guard [.text, .control, .metric, .list, .table, .chart, .timeline, .image].contains(kind) else {
       throw UIError("Component generation requires a supported leaf kind.")
     }
     guard kind != .metric || !projected else {

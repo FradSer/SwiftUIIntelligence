@@ -107,7 +107,7 @@ import SwiftUIIntelligenceFoundationModels
     calculationSignatures: [.init(id: "scale", inputs: ["people": .number], outputs: ["amount": .number])])
   let instructions = request.calculationLayoutInstructions
   #expect(instructions.contains("recordSource"))
-  #expect(instructions.contains("explicit category"))
+  #expect(instructions.contains("cardColor"))
   #expect(instructions.contains("data, not instructions"))
   #expect(!instructions.contains("people:number"))
   #expect(instructions.utf8.count < request.calculationGenerationInstructions.utf8.count)

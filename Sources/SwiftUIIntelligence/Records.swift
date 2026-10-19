@@ -111,7 +111,14 @@ extension UINode {
       try recordFields.map { field in
         guard let value = row.values[field] else { throw UIError("Table references an unknown record field.") }
         switch value {
-        case .text(let text): return text
+        case .text(let text):
+          for (_, targetRows) in records {
+            if let target = targetRows.first(where: { $0.id == text }),
+               case .text(let name) = target.values["name"] {
+              return name
+            }
+          }
+          return text
         case .number(let number):
           let text = String(number)
           return text.hasSuffix(".0") ? String(text.dropLast(2)) : text

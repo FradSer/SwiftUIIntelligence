@@ -71,6 +71,35 @@ import XCTest
     verifyNativeBill(appearance: "dark")
   }
 
+  func testCaptureLiveEquipment() {
+    let app = launchNativeFixture("live-equipment", example: "Equipment comparison", appearance: "light")
+    attach("live-equipment-light", app: app)
+  }
+
+  func testCaptureLiveMeal() {
+    let app = launchNativeFixture("live-meal", example: "Meal plan", appearance: "light")
+    attach("live-meal-light", app: app)
+  }
+
+  func testCaptureLiveBill() {
+    let app = launchNativeFixture("live-bill", example: "Split bill", appearance: "light")
+    attach("live-bill-light", app: app)
+  }
+
+  func testCaptureModernHotelsParis() {
+    continueAfterFailure = false
+    prepareOrientation()
+    let app = XCUIApplication()
+    app.launchArguments = ["--chat-document-file", "Documents/paris-hotels.json", "--chat-fixture", "none"]
+    app.launch()
+    send("Paris offers a wide selection of modern-design hotels that blend contemporary architecture, thoughtful interiors, and premium hospitality.", app: app)
+    XCTAssertTrue(app.staticTexts["Modern Hotels in Paris"].waitForExistence(timeout: 10))
+    if app.buttons["document-panel"].exists { app.buttons["document-panel"].tap() }
+    // Allow async image loading from network to complete before taking the screenshot
+    Thread.sleep(forTimeInterval: 2.5)
+    attach("openui-modern-hotels-paris", app: app)
+  }
+
   private func launchNativeFixture(_ fixture: String, example: String, appearance: String) -> XCUIApplication {
     continueAfterFailure = false
     prepareOrientation()

@@ -13,6 +13,16 @@ SwiftUI 组件渲染。后续消息修订同一份文档。
 
 仓库为私有，未提供 license 文件，也未公开发布。
 
+## 界面预览
+
+<p align="center">
+  <img src="docs/screenshots/ipad-paris.png" width="100%" alt="iPad Pro 横屏双栏对话与文档对照" />
+</p>
+
+| 现代酒店卡片与画廊 | 账单多方分摊 | 设备筛选与对比 | 膳食计划与时间线 |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/screenshots/phone-paris.png" width="220" alt="巴黎现代酒店卡片" /> | <img src="docs/screenshots/bill.png" width="220" alt="账单多方分摊" /> | <img src="docs/screenshots/equipment.png" width="220" alt="设备筛选与对比" /> | <img src="docs/screenshots/meal.png" width="220" alt="膳食计划与时间线" /> |
+
 ## 工作原理
 
 1. 宿主收集对话。
