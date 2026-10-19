@@ -189,15 +189,6 @@ private func decodeNode(_ node: String) throws -> UIDocument {
                   "type": "text",
                   "text": "Haute couture suites; courtyard dining; Dior spa; near Champs-Élysées.",
                   "style": "caption"
-                },
-                {
-                  "id": "actions-plaza",
-                  "type": "hstack",
-                  "spacing": 8,
-                  "children": [
-                    { "id": "book-plaza", "type": "button", "title": "Book", "action": "book" },
-                    { "id": "fav-plaza", "type": "button", "title": "", "icon": "favorite", "action": "favorite" }
-                  ]
                 }
               ]
             },
@@ -232,15 +223,6 @@ private func decodeNode(_ node: String) throws -> UIDocument {
                   "type": "text",
                   "text": "Landmark hotel with opulent rooms, Michelin dining, and a lavish spa.",
                   "style": "caption"
-                },
-                {
-                  "id": "actions-george",
-                  "type": "hstack",
-                  "spacing": 8,
-                  "children": [
-                    { "id": "book-george", "type": "button", "title": "Book", "action": "book" },
-                    { "id": "fav-george", "type": "button", "title": "", "icon": "favorite", "action": "favorite" }
-                  ]
                 }
               ]
             },
@@ -275,15 +257,6 @@ private func decodeNode(_ node: String) throws -> UIDocument {
                   "type": "text",
                   "text": "Eiffel Tower views from a former palace; pool and two-star dining.",
                   "style": "caption"
-                },
-                {
-                  "id": "actions-shangri",
-                  "type": "hstack",
-                  "spacing": 8,
-                  "children": [
-                    { "id": "book-shangri", "type": "button", "title": "Book", "action": "book" },
-                    { "id": "fav-shangri", "type": "button", "title": "", "icon": "favorite", "action": "favorite" }
-                  ]
                 }
               ]
             }
@@ -305,10 +278,10 @@ private func decodeNode(_ node: String) throws -> UIDocument {
     "floatingActions": []
   }
   """
-  let doc = try UIDocument.decode(Data(json.utf8), registeredActions: ["book", "favorite"])
+  let doc = try UIDocument.decode(Data(json.utf8), registeredActions: [])
   #expect(doc.root.children.count == 3)
   let canonical = try DocumentGenerationContract.canonicalJSON(doc)
-  let redecoded = try UIDocument.decode(canonical, registeredActions: ["book", "favorite"])
+  let redecoded = try UIDocument.decode(canonical, registeredActions: [])
   #expect(redecoded.root.id == "paris-hotels-root")
   #expect(redecoded.root.children[1].children.count == 3)
 }
