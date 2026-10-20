@@ -325,7 +325,7 @@ SWIFTUIINTELLIGENCE_API_KEY=<key> swift run --disable-sandbox SwiftUIIntelligenc
 This mode runs the same three-turn acceptance over the network and writes `transport.txt` with the
 scheme, host, and model it used.
 
-The `evidence/` directory is about 4 GB and stays on this Mac. It is not in the private repository,
+The `evidence/` directory is about 6.5 GB and stays on this Mac. It is not in the repository,
 so the evidence paths exist only in the local workspace. See
 `evidence/expanded-final/VALIDATION.md` for the current round.
 

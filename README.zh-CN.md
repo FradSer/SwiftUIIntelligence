@@ -292,7 +292,7 @@ SWIFTUIINTELLIGENCE_API_KEY=<key> swift run --disable-sandbox SwiftUIIntelligenc
 
 该模式通过网络运行相同的三轮验收，并把 scheme、host 和 model 写入 `transport.txt`。
 
-`evidence/` 目录约 4 GB，只保留在本机，不在私有仓库中，因此上述证据路径只在本地工作区存在。
+`evidence/` 目录约 6.5 GB，只保留在本机，不在仓库中，因此上述证据路径只在本地工作区存在。
 本轮结果见 `evidence/expanded-final/VALIDATION.md`。
 
 ## 响应式示例接入
